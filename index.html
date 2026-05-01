@@ -1,602 +1,89 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MockQL — GraphQL Mock Endpoint Generator</title>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --bg: #0a0a0f;
-    --surface: #111118;
-    --surface2: #1a1a24;
-    --border: #2a2a3a;
-    --border2: #3a3a50;
-    --text: #e8e8f0;
-    --muted: #6b6b88;
-    --accent: #7c6aff;
-    --accent2: #a78bfa;
-    --green: #34d399;
-    --red: #f87171;
-    --amber: #fbbf24;
-    --mono: 'JetBrains Mono', monospace;
-    --display: 'Syne', sans-serif;
-  }
-
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--display);
-    min-height: 100vh;
-    overflow-x: hidden;
-  }
-
-  /* Background grid */
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background-image:
-      linear-gradient(var(--border) 1px, transparent 1px),
-      linear-gradient(90deg, var(--border) 1px, transparent 1px);
-    background-size: 40px 40px;
-    opacity: 0.3;
-    pointer-events: none;
-    z-index: 0;
-  }
-
-  body::after {
-    content: '';
-    position: fixed;
-    top: -200px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 600px;
-    height: 600px;
-    background: radial-gradient(circle, rgba(124,106,255,0.12) 0%, transparent 70%);
-    pointer-events: none;
-    z-index: 0;
-  }
-
-  .wrap {
-    position: relative;
-    z-index: 1;
-    max-width: 860px;
-    margin: 0 auto;
-    padding: 0 24px 80px;
-  }
-
-  /* Header */
-  header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 28px 0 48px;
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 52px;
-  }
-
-  .logo {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .logo-icon {
-    width: 36px;
-    height: 36px;
-    background: var(--accent);
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 18px;
-    font-weight: 800;
-    color: white;
-    font-family: var(--mono);
-    letter-spacing: -2px;
-  }
-
-  .logo-text {
-    font-size: 20px;
-    font-weight: 800;
-    letter-spacing: -0.5px;
-  }
-
-  .logo-text span { color: var(--accent2); }
-
-  .tag {
-    font-family: var(--mono);
-    font-size: 11px;
-    padding: 4px 10px;
-    border-radius: 99px;
-    border: 1px solid var(--border2);
-    color: var(--muted);
-    letter-spacing: 0.05em;
-  }
-
-  /* Hero */
-  .hero {
-    margin-bottom: 48px;
-  }
-
-  .hero h1 {
-    font-size: clamp(28px, 5vw, 42px);
-    font-weight: 800;
-    line-height: 1.15;
-    letter-spacing: -1px;
-    margin-bottom: 14px;
-  }
-
-  .hero h1 em {
-    font-style: normal;
-    color: var(--accent2);
-  }
-
-  .hero p {
-    font-size: 16px;
-    color: var(--muted);
-    font-family: var(--mono);
-    line-height: 1.7;
-  }
-
-  /* Steps */
-  .steps {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 36px;
-  }
-
-  .step {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 12px;
-    font-family: var(--mono);
-    color: var(--muted);
-  }
-
-  .step-num {
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    border: 1px solid var(--border2);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 11px;
-    color: var(--muted);
-    flex-shrink: 0;
-  }
-
-  .step.active .step-num {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: white;
-  }
-
-  .step.active { color: var(--text); }
-
-  .step-divider {
-    flex: 1;
-    height: 1px;
-    background: var(--border);
-    max-width: 40px;
-  }
-
-  /* Config panel */
-  .config-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    margin-bottom: 20px;
-  }
-
-  .field-group {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  label {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--muted);
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  input[type="text"] {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 10px 14px;
-    font-family: var(--mono);
-    font-size: 13px;
-    color: var(--text);
-    outline: none;
-    transition: border-color 0.2s;
-    width: 100%;
-  }
-
-  input[type="text"]:focus {
-    border-color: var(--accent);
-  }
-
-  input[type="text"]::placeholder { color: var(--muted); }
-
-  /* Editor */
-  .editor-wrap {
-    position: relative;
-    margin-bottom: 20px;
-  }
-
-  .editor-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 16px;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-bottom: none;
-    border-radius: 10px 10px 0 0;
-  }
-
-  .editor-label {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--muted);
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--border2);
-  }
-
-  .dot.ok { background: var(--green); }
-  .dot.err { background: var(--red); }
-  .dot.warn { background: var(--amber); }
-
-  .editor-actions {
-    display: flex;
-    gap: 8px;
-  }
-
-  .btn-sm {
-    font-family: var(--mono);
-    font-size: 11px;
-    padding: 4px 10px;
-    border-radius: 6px;
-    border: 1px solid var(--border2);
-    background: transparent;
-    color: var(--muted);
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-
-  .btn-sm:hover {
-    border-color: var(--accent);
-    color: var(--accent2);
-  }
-
-  textarea {
-    width: 100%;
-    min-height: 320px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 0 0 10px 10px;
-    padding: 16px;
-    font-family: var(--mono);
-    font-size: 13px;
-    line-height: 1.8;
-    color: var(--text);
-    outline: none;
-    resize: vertical;
-    tab-size: 2;
-    transition: border-color 0.2s;
-  }
-
-  textarea:focus { border-color: var(--accent); }
-
-  /* Validation bar */
-  .validation {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 10px 14px;
-    border-radius: 8px;
-    font-family: var(--mono);
-    font-size: 12px;
-    margin-bottom: 20px;
-    border: 1px solid transparent;
-    min-height: 42px;
-    transition: all 0.2s;
-  }
-
-  .validation.idle {
-    background: var(--surface);
-    border-color: var(--border);
-    color: var(--muted);
-  }
-
-  .validation.valid {
-    background: rgba(52, 211, 153, 0.07);
-    border-color: rgba(52, 211, 153, 0.3);
-    color: var(--green);
-  }
-
-  .validation.invalid {
-    background: rgba(248, 113, 113, 0.07);
-    border-color: rgba(248, 113, 113, 0.3);
-    color: var(--red);
-  }
-
-  .validation.warning {
-    background: rgba(251, 191, 36, 0.07);
-    border-color: rgba(251, 191, 36, 0.3);
-    color: var(--amber);
-  }
-
-  .val-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
-  .val-msgs { display: flex; flex-direction: column; gap: 3px; }
-  .val-msg { line-height: 1.5; }
-
-  /* Generate button */
-  .btn-main {
-    width: 100%;
-    padding: 16px;
-    background: var(--accent);
-    border: none;
-    border-radius: 10px;
-    font-family: var(--display);
-    font-size: 15px;
-    font-weight: 700;
-    color: white;
-    cursor: pointer;
-    letter-spacing: 0.3px;
-    transition: all 0.2s;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .btn-main::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 60%);
-  }
-
-  .btn-main:hover { transform: translateY(-1px); box-shadow: 0 8px 30px rgba(124,106,255,0.35); }
-  .btn-main:active { transform: translateY(0); }
-  .btn-main:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
-
-  /* Result */
-  .result-panel {
-    margin-top: 32px;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    overflow: hidden;
-    display: none;
-    animation: slideUp 0.3s ease;
-  }
-
-  .result-panel.show { display: block; }
-
-  @keyframes slideUp {
-    from { opacity: 0; transform: translateY(16px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-
-  .result-header {
-    padding: 14px 20px;
-    background: rgba(52,211,153,0.08);
-    border-bottom: 1px solid rgba(52,211,153,0.2);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .result-header-text {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--green);
-  }
-
-  .result-header-sub {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--muted);
-    margin-left: auto;
-  }
-
-  .result-body { padding: 20px; }
-
-  .endpoint-box {
-    display: flex;
-    align-items: center;
-    gap: 0;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    overflow: hidden;
-    margin-bottom: 20px;
-  }
-
-  .endpoint-method {
-    padding: 12px 14px;
-    font-family: var(--mono);
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--accent2);
-    background: rgba(124,106,255,0.1);
-    border-right: 1px solid var(--border);
-    letter-spacing: 0.05em;
-    white-space: nowrap;
-  }
-
-  .endpoint-url {
-    flex: 1;
-    padding: 12px 14px;
-    font-family: var(--mono);
-    font-size: 12px;
-    color: var(--text);
-    word-break: break-all;
-    background: none;
-    border: none;
-    outline: none;
-    cursor: text;
-    width: 100%;
-  }
-
-  .copy-btn {
-    padding: 12px 16px;
-    font-family: var(--mono);
-    font-size: 11px;
-    background: var(--accent);
-    border: none;
-    color: white;
-    cursor: pointer;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    white-space: nowrap;
-    transition: background 0.15s;
-  }
-
-  .copy-btn:hover { background: #6857e0; }
-  .copy-btn.copied { background: var(--green); color: #0a0a0f; }
-
-  /* Usage snippet */
-  .snippet-label {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    margin-bottom: 10px;
-  }
-
-  .snippet {
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 16px;
-    font-family: var(--mono);
-    font-size: 12px;
-    line-height: 1.8;
-    color: #9d9dbf;
-    overflow-x: auto;
-    white-space: pre;
-  }
-
-  .snippet .kw { color: var(--accent2); }
-  .snippet .str { color: var(--green); }
-  .snippet .prop { color: #7dd3fc; }
-  .snippet .val { color: var(--amber); }
-
-  /* Loading spinner */
-  .spinner {
-    display: inline-block;
-    width: 14px;
-    height: 14px;
-    border: 2px solid rgba(255,255,255,0.3);
-    border-top-color: white;
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-    vertical-align: middle;
-    margin-right: 8px;
-  }
-
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  /* Info notes */
-  .info-box {
-    display: flex;
-    gap: 12px;
-    padding: 14px 16px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-left: 3px solid var(--accent);
-    border-radius: 0 8px 8px 0;
-    margin-top: 20px;
-    font-family: var(--mono);
-    font-size: 12px;
-    color: var(--muted);
-    line-height: 1.7;
-  }
-
-  .info-box strong { color: var(--text); font-weight: 500; }
-
-  /* Scrollbar */
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
-
-  @media (max-width: 600px) {
-    .config-row { grid-template-columns: 1fr; }
-    .steps { flex-wrap: wrap; }
-    .hero h1 { font-size: 26px; }
-  }
-</style>
-</head>
-<body>
-<div class="wrap">
-
-  <header>
-    <div class="logo">
-      <div class="logo-icon">{}</div>
-      <div class="logo-text">Mock<span>QL</span></div>
-    </div>
-    <span class="tag">v1.0.0</span>
-  </header>
-
-  <div class="hero">
-    <h1>Create a <em>GraphQL mock</em><br>endpoint in seconds</h1>
-    <p>// Paste your JSON response → validate → get a live endpoint URL</p>
-  </div>
-
-  <div class="steps">
-    <div class="step active"><div class="step-num">1</div> Write response</div>
-    <div class="step-divider"></div>
-    <div class="step active"><div class="step-num">2</div> Validate</div>
-    <div class="step-divider"></div>
-    <div class="step" id="step3"><div class="step-num">3</div> Get endpoint</div>
-  </div>
-
-  <!-- Config -->
-  <div class="config-row">
-    <div class="field-group">
-      <label>JSONBin API Key</label>
-      <input type="text" id="apiKey" placeholder="$2a$10$..." value="">
-    </div>
-    <div class="field-group">
-      <label>Endpoint label (optional)</label>
-      <input type="text" id="endpointLabel" placeholder="e.g. get-user-query">
-    </div>
-  </div>
-
-  <!-- Editor -->
-  <div class="editor-wrap">
-    <div class="editor-header">
-      <div class="editor-label">
-        <div class="dot" id="statusDot"></div>
-        <span id="statusText">mock response json</span>
-      </div>
-      <div class="editor-actions">
-        <button class="btn-sm" onclick="formatJson()">Format</button>
-        <button class="btn-sm" onclick="loadExample()">Load example</button>
-        <button class="btn-sm" onclick="clearEditor()">Clear</button>
-      </div>
-    </div>
-    <textarea id="jsonEditor" spellcheck="false" placeholder='Paste your GraphQL mock response here...
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>MockQL — GraphQL Mock Endpoint Generator</title>
+        <link
+            href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Syne:wght@400;500;600;700;800&display=swap"
+            rel="stylesheet"
+        />
+        <link rel="stylesheet" href="style.css" />
+    </head>
+    <body>
+        <div class="wrap">
+            <header>
+                <div class="logo">
+                    <div class="logo-icon">{}</div>
+                    <div class="logo-text">Mock<span>QL</span></div>
+                </div>
+                <span class="tag">v1.0.0</span>
+            </header>
+
+            <div class="hero">
+                <h1>Create a <em>GraphQL mock</em><br />endpoint in seconds</h1>
+                <p>
+                    // Paste your JSON response → validate → get a live endpoint
+                    URL
+                </p>
+            </div>
+
+            <div class="steps">
+                <div class="step active">
+                    <div class="step-num">1</div>
+                    Write response
+                </div>
+                <div class="step-divider"></div>
+                <div class="step active">
+                    <div class="step-num">2</div>
+                    Validate
+                </div>
+                <div class="step-divider"></div>
+                <div class="step" id="step3">
+                    <div class="step-num">3</div>
+                    Get endpoint
+                </div>
+            </div>
+
+            <!-- Config -->
+            <div class="config-row">
+                <div class="field-group">
+                    <label>JSONBin API Key</label>
+                    <input type="text" id="apiKey" placeholder="$2a$10$..." />
+                </div>
+                <div class="field-group">
+                    <label>Endpoint label (optional)</label>
+                    <input
+                        type="text"
+                        id="endpointLabel"
+                        placeholder="e.g. get-user-query"
+                    />
+                </div>
+            </div>
+
+            <!-- Editor -->
+            <div class="editor-wrap">
+                <div class="editor-header">
+                    <div class="editor-label">
+                        <div class="dot" id="statusDot"></div>
+                        <span id="statusText">mock response json</span>
+                    </div>
+                    <div class="editor-actions">
+                        <button class="btn-sm" onclick="formatJson()">
+                            Format
+                        </button>
+                        <button class="btn-sm" onclick="loadExample()">
+                            Load example
+                        </button>
+                        <button class="btn-sm" onclick="clearEditor()">
+                            Clear
+                        </button>
+                    </div>
+                </div>
+                <textarea
+                    id="jsonEditor"
+                    spellcheck="false"
+                    placeholder='Paste your GraphQL mock response here...
 
 Example:
 {
@@ -606,265 +93,81 @@ Example:
       "name": "Alice"
     }
   }
-}'></textarea>
-  </div>
+}'
+                ></textarea>
+            </div>
 
-  <!-- Validation -->
-  <div class="validation idle" id="validationBar">
-    <span class="val-icon">○</span>
-    <div class="val-msgs">
-      <span class="val-msg">Waiting for input...</span>
-    </div>
-  </div>
+            <!-- Validation -->
+            <div class="validation idle" id="validationBar">
+                <span class="val-icon">○</span>
+                <div class="val-msgs">
+                    <span class="val-msg">Waiting for input...</span>
+                </div>
+            </div>
 
-  <!-- Generate -->
-  <button class="btn-main" id="generateBtn" onclick="generateEndpoint()">
-    Generate Mock Endpoint
-  </button>
+            <!-- Generate -->
+            <button
+                class="btn-main"
+                id="generateBtn"
+                onclick="generateEndpoint()"
+            >
+                Generate Mock Endpoint
+            </button>
 
-  <!-- Result -->
-  <div class="result-panel" id="resultPanel">
-    <div class="result-header">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <circle cx="8" cy="8" r="7" stroke="#34d399" stroke-width="1.5"/>
-        <path d="M5 8l2 2 4-4" stroke="#34d399" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-      <span class="result-header-text">Endpoint created successfully</span>
-      <span class="result-header-sub" id="resultMeta"></span>
-    </div>
-    <div class="result-body">
-      <div class="endpoint-box">
-        <span class="endpoint-method">POST</span>
-        <input class="endpoint-url" id="endpointUrl" readonly>
-        <button class="copy-btn" id="copyBtn" onclick="copyEndpoint()">COPY</button>
-      </div>
+            <!-- Result -->
+            <div class="result-panel" id="resultPanel">
+                <div class="result-header">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <circle
+                            cx="8"
+                            cy="8"
+                            r="7"
+                            stroke="#34d399"
+                            stroke-width="1.5"
+                        />
+                        <path
+                            d="M5 8l2 2 4-4"
+                            stroke="#34d399"
+                            stroke-width="1.5"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        />
+                    </svg>
+                    <span class="result-header-text"
+                        >Endpoint created successfully</span
+                    >
+                    <span class="result-header-sub" id="resultMeta"></span>
+                </div>
+                <div class="result-body">
+                    <div class="endpoint-box">
+                        <span class="endpoint-method">POST</span>
+                        <input class="endpoint-url" id="endpointUrl" readonly />
+                        <button
+                            class="copy-btn"
+                            id="copyBtn"
+                            onclick="copyEndpoint()"
+                        >
+                            COPY
+                        </button>
+                    </div>
 
-      <div class="snippet-label">Usage example — fetch</div>
-      <div class="snippet" id="usageSnippet"></div>
+                    <div class="snippet-label">Usage example — fetch</div>
+                    <div class="snippet" id="usageSnippet"></div>
 
-      <div class="info-box">
-        <span>ℹ</span>
-        <div>
-          <strong>How it works:</strong> This endpoint accepts any GraphQL POST request and always returns your mock response. The Cloudflare Worker handles CORS automatically — use this URL directly in Apollo Client, urql, or any fetch call.
+                    <div class="info-box">
+                        <span>ℹ</span>
+                        <div>
+                            <strong>How it works:</strong> This endpoint accepts
+                            any GraphQL POST request and always returns your
+                            mock response. The Cloudflare Worker handles CORS
+                            automatically — use this URL directly in Apollo
+                            Client, urql, or any fetch call.
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
-      </div>
-    </div>
-  </div>
 
-</div>
-
-<script>
-  // ─── Config ───────────────────────────────────────────────
-  // Replace this with your deployed Cloudflare Worker URL
-  const WORKER_BASE_URL = 'https://mockql.YOUR-SUBDOMAIN.workers.dev';
-  const JSONBIN_API = 'https://api.jsonbin.io/v3/b';
-
-  // ─── Example JSON ─────────────────────────────────────────
-  const EXAMPLE = {
-    data: {
-      users: [
-        { id: "usr_001", name: "Alice Rahman", email: "alice@example.com", role: "ADMIN", active: true },
-        { id: "usr_002", name: "Tariq Hasan", email: "tariq@example.com", role: "MEMBER", active: true }
-      ],
-      _meta: { total: 2, page: 1, hasNextPage: false }
-    }
-  };
-
-  // ─── Editor state ─────────────────────────────────────────
-  const editor = document.getElementById('jsonEditor');
-  const validationBar = document.getElementById('validationBar');
-  const statusDot = document.getElementById('statusDot');
-  const statusText = document.getElementById('statusText');
-  let debounceTimer;
-
-  editor.addEventListener('input', () => {
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(validateJson, 400);
-  });
-
-  editor.addEventListener('keydown', e => {
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      const s = editor.selectionStart;
-      editor.value = editor.value.substring(0, s) + '  ' + editor.value.substring(editor.selectionEnd);
-      editor.selectionStart = editor.selectionEnd = s + 2;
-    }
-  });
-
-  function setStatus(type, icon, msgs) {
-    validationBar.className = 'validation ' + type;
-    const [mainMsg, ...rest] = Array.isArray(msgs) ? msgs : [msgs];
-    validationBar.innerHTML = `<span class="val-icon">${icon}</span><div class="val-msgs">${[mainMsg, ...rest].map(m => `<span class="val-msg">${m}</span>`).join('')}</div>`;
-    statusDot.className = 'dot' + (type === 'valid' ? ' ok' : type === 'invalid' ? ' err' : type === 'warning' ? ' warn' : '');
-    statusText.textContent = type === 'valid' ? 'valid graphql response' : type === 'invalid' ? 'invalid json' : type === 'warning' ? 'valid json — check structure' : 'mock response json';
-  }
-
-  function validateJson() {
-    const raw = editor.value.trim();
-    if (!raw) { setStatus('idle', '○', 'Waiting for input...'); return null; }
-
-    let parsed;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (e) {
-      const msg = e.message.replace('JSON.parse: ', '').replace('JSON Parse error: ', '');
-      setStatus('invalid', '✕', [`JSON syntax error: ${msg}`]);
-      return null;
-    }
-
-    const issues = [];
-    const warnings = [];
-
-    if (typeof parsed !== 'object' || Array.isArray(parsed) || parsed === null)
-      issues.push('Root must be a JSON object {}');
-
-    if (!issues.length) {
-      const hasData = 'data' in parsed;
-      const hasErrors = 'errors' in parsed;
-
-      if (!hasData && !hasErrors)
-        warnings.push('No "data" or "errors" key found — a valid GraphQL response needs at least one');
-
-      if (hasErrors) {
-        if (!Array.isArray(parsed.errors))
-          issues.push('"errors" must be an array');
-        else if (parsed.errors.some(e => typeof e !== 'object' || !e.message))
-          warnings.push('Each error object should have a "message" field');
-      }
-
-      if (hasData && parsed.data !== null && typeof parsed.data !== 'object')
-        issues.push('"data" must be an object or null');
-    }
-
-    if (issues.length) { setStatus('invalid', '✕', issues); return null; }
-    if (warnings.length) { setStatus('warning', '△', warnings); return parsed; }
-
-    const keys = Object.keys(parsed.data || {}).join(', ') || '(empty)';
-    setStatus('valid', '✓', [`Valid GraphQL response — data keys: ${keys}`]);
-    return parsed;
-  }
-
-  // ─── Format ───────────────────────────────────────────────
-  function formatJson() {
-    try {
-      const parsed = JSON.parse(editor.value);
-      editor.value = JSON.stringify(parsed, null, 2);
-      validateJson();
-    } catch (_) {}
-  }
-
-  function loadExample() {
-    editor.value = JSON.stringify(EXAMPLE, null, 2);
-    validateJson();
-  }
-
-  function clearEditor() {
-    editor.value = '';
-    setStatus('idle', '○', 'Waiting for input...');
-    document.getElementById('resultPanel').classList.remove('show');
-  }
-
-  // ─── Generate endpoint ────────────────────────────────────
-  async function generateEndpoint() {
-    const parsed = validateJson();
-    if (!parsed) {
-      validationBar.style.animation = 'none';
-      validationBar.offsetHeight;
-      validationBar.style.animation = 'shake 0.3s ease';
-      return;
-    }
-
-    const apiKey = document.getElementById('apiKey').value.trim();
-    if (!apiKey) {
-      alert('Please enter your JSONBin.io API key.\n\nGet a free key at: https://jsonbin.io');
-      return;
-    }
-
-    const label = document.getElementById('endpointLabel').value.trim() || 'mock-endpoint';
-    const btn = document.getElementById('generateBtn');
-
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span>Saving to JSONBin...';
-
-    try {
-      const res = await fetch(JSONBIN_API, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Master-Key': apiKey,
-          'X-Bin-Name': label,
-          'X-Bin-Private': 'false'
-        },
-        body: JSON.stringify(parsed)
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || `JSONBin error: ${res.status}`);
-      }
-
-      const data = await res.json();
-      const binId = data.metadata.id;
-      const endpointUrl = `${WORKER_BASE_URL}/graphql/${binId}`;
-
-      showResult(endpointUrl, binId, label, parsed);
-
-    } catch (err) {
-      alert(`Failed to create endpoint:\n\n${err.message}`);
-    } finally {
-      btn.disabled = false;
-      btn.innerHTML = 'Generate Mock Endpoint';
-    }
-  }
-
-  // ─── Show result ──────────────────────────────────────────
-  function showResult(url, binId, label, parsed) {
-    document.getElementById('step3').classList.add('active');
-    document.getElementById('endpointUrl').value = url;
-    document.getElementById('resultMeta').textContent = `bin: ${binId} · label: ${label}`;
-
-    const snippet = buildSnippet(url);
-    document.getElementById('usageSnippet').innerHTML = snippet;
-
-    document.getElementById('resultPanel').classList.add('show');
-    document.getElementById('resultPanel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }
-
-  function buildSnippet(url) {
-    const u = url;
-    return `<span class="kw">const</span> <span class="prop">response</span> = <span class="kw">await</span> fetch(<span class="str">"${u}"</span>, {
-  method: <span class="str">"POST"</span>,
-  headers: {
-    <span class="str">"Content-Type"</span>: <span class="str">"application/json"</span>,
-  },
-  body: JSON.stringify({
-    query: <span class="str">\`{ yourQuery { field } }\`</span>,
-  }),
-});
-
-<span class="kw">const</span> <span class="prop">data</span> = <span class="kw">await</span> response.json();
-console.log(data); <span class="val">// → your mock response</span>`;
-  }
-
-  // ─── Copy ─────────────────────────────────────────────────
-  function copyEndpoint() {
-    const url = document.getElementById('endpointUrl').value;
-    navigator.clipboard.writeText(url).then(() => {
-      const btn = document.getElementById('copyBtn');
-      btn.textContent = 'COPIED!';
-      btn.classList.add('copied');
-      setTimeout(() => { btn.textContent = 'COPY'; btn.classList.remove('copied'); }, 2000);
-    });
-  }
-
-  // ─── Shake animation ──────────────────────────────────────
-  const style = document.createElement('style');
-  style.textContent = `@keyframes shake {
-    0%,100%{transform:translateX(0)}
-    25%{transform:translateX(-6px)}
-    75%{transform:translateX(6px)}
-  }`;
-  document.head.appendChild(style);
-</script>
-</body>
+        <script src="app.js"></script>
+    </body>
 </html>
