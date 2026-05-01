@@ -1,15 +1,50 @@
-# MockQL — Setup Guide
+# MockQL — GraphQL Mock Endpoint Generator
 
-## What you'll need
-- A free [JSONBin.io](https://jsonbin.io) account (for storing mock responses)
-- A free [Cloudflare](https://cloudflare.com) account (for the Worker endpoint)
-- A free [Netlify](https://netlify.com) or [GitHub Pages](https://pages.github.com) account (for hosting the website)
+> Create a live GraphQL mock endpoint from a JSON response in seconds.
+> Built by [Tanvir Shaad](https://github.com/tanvirshaad)
 
 ---
 
-## Step 1 — Deploy the Cloudflare Worker
+## What it does
 
-The Worker is the engine that turns your stored JSON into a live GraphQL endpoint.
+MockQL lets you write a GraphQL JSON response manually, validates its structure, stores it on JSONBin.io, and gives you a live POST endpoint powered by a Cloudflare Worker — ready to plug into any app.
+
+---
+
+## Stack
+
+| Layer | Technology | Cost |
+|---|---|---|
+| Frontend | HTML + CSS + Vanilla JS | Free |
+| Hosting | Netlify | Free |
+| Mock storage | JSONBin.io | Free |
+| Endpoint | Cloudflare Workers | Free |
+
+---
+
+## Project structure
+
+```
+mockql/
+├── index.html        # UI — validate & generate endpoints
+├── style.css         # All styles and animations
+├── app.js            # All logic — validation, API calls, clipboard
+├── worker.js         # Cloudflare Worker — the mock GraphQL endpoint
+└── wrangler.toml     # Cloudflare Worker config
+```
+
+---
+
+## Setup guide
+
+### What you'll need
+- A free [JSONBin.io](https://jsonbin.io) account
+- A free [Cloudflare](https://cloudflare.com) account
+- A free [Netlify](https://netlify.com) account
+
+---
+
+### Step 1 — Deploy the Cloudflare Worker
 
 ```bash
 # Install Wrangler CLI
@@ -18,24 +53,27 @@ npm install -g wrangler
 # Login to Cloudflare
 wrangler login
 
-# Set your JSONBin master key as a secret
+# Register your workers.dev subdomain first (if not done yet)
+# Go to dash.cloudflare.com → Workers & Pages → pick a subdomain
+
+# Set your JSONBin master key as an encrypted secret
 wrangler secret put JSONBIN_MASTER_KEY
-# Paste your JSONBin master key when prompted
+# Paste your JSONBin Master Key when prompted — press Y if asked to create the worker
 
 # Deploy the worker
 wrangler deploy
 ```
 
-After deploying, Wrangler will print your Worker URL:
+After deploying, Wrangler prints your Worker URL:
 ```
 https://mockql.YOUR-SUBDOMAIN.workers.dev
 ```
 
 ---
 
-## Step 2 — Update the website config
+### Step 2 — Update the frontend config
 
-Open `index.html` and find this line near the top of the `<script>` tag:
+Open `app.js` and update this line at the top:
 
 ```js
 const WORKER_BASE_URL = 'https://mockql.YOUR-SUBDOMAIN.workers.dev';
@@ -45,45 +83,45 @@ Replace `YOUR-SUBDOMAIN` with your actual Cloudflare Workers subdomain.
 
 ---
 
-## Step 3 — Deploy the website
+### Step 3 — Deploy the website to Netlify
 
-### Option A: Netlify (drag & drop)
-1. Go to [app.netlify.com](https://app.netlify.com)
-2. Drag your `index.html` file onto the deploy zone
-3. Done — you get a live URL instantly
+**Option A — Drag & drop (fastest)**
+1. Go to [app.netlify.com](https://app.netlify.com) and log in
+2. Drag your project folder (containing `index.html`, `style.css`, `app.js`) onto the deploy zone
+3. Netlify gives you a live URL instantly
 
-### Option B: GitHub Pages
-1. Create a new GitHub repo
-2. Upload `index.html` as the only file
-3. Go to Settings → Pages → Deploy from branch → main
-4. Your site is live at `https://YOUR-USERNAME.github.io/REPO-NAME`
+**Option B — GitHub (recommended for updates)**
+1. Push your project to a GitHub repo
+2. Go to Netlify → Add new site → Import from GitHub
+3. Select the repo → Deploy
+4. Every future `git push` auto-deploys
 
 ---
 
-## Step 4 — Get your JSONBin API key
+### Step 4 — Get your JSONBin API key
 
 1. Go to [jsonbin.io](https://jsonbin.io) and create a free account
-2. Go to your Dashboard → API Keys
+2. Go to Dashboard → API Keys
 3. Copy your **Master Key** (starts with `$2a$10$...`)
-4. Paste it into the "JSONBin API Key" field on the website
+4. Paste it into the **JSONBin API Key** field on the website at runtime
 
 ---
 
 ## How to use
 
-1. Open your hosted website
-2. Paste your JSONBin API key
-3. Type or paste your mock GraphQL JSON response
-4. Optionally give the endpoint a label
+1. Open your live Netlify site
+2. Paste your JSONBin Master Key into the API Key field
+3. Write or paste your mock GraphQL JSON response
+4. Optionally give the endpoint a label (e.g. `get-user`)
 5. Click **Generate Mock Endpoint**
-6. Copy the generated URL — e.g.:
+6. Copy the generated URL:
    ```
-   https://mockql.your-subdomain.workers.dev/graphql/64a3f2b1e3267...
+   https://mockql.YOUR-SUBDOMAIN.workers.dev/graphql/64a3f2b1e3267...
    ```
 7. Use it in your app as a GraphQL endpoint:
    ```js
    const client = new ApolloClient({
-     uri: 'https://mockql.your-subdomain.workers.dev/graphql/64a3f2b1e3267...',
+     uri: 'https://mockql.YOUR-SUBDOMAIN.workers.dev/graphql/64a3f2b1e3267...',
      cache: new InMemoryCache(),
    });
    ```
@@ -97,23 +135,30 @@ Replace `YOUR-SUBDOMAIN` with your actual Cloudflare Workers subdomain.
 | Any GraphQL POST (any query, any variables) | Always your mock JSON |
 | GET request | Also returns your mock JSON |
 | Wrong bin ID | `{ errors: [{ message: "Mock not found" }] }` |
+| Server misconfigured | `{ errors: [{ message: "Worker misconfigured" }] }` |
 
-CORS is enabled for all origins, so you can call the endpoint from any browser app.
+CORS is open for all origins — call the endpoint from any browser or server app.
+
+---
+
+## Security notes
+
+- Your JSONBin Master Key is entered at runtime in the browser — it is never stored in code or committed to Git
+- The Cloudflare Worker secret (`JSONBIN_MASTER_KEY`) is stored encrypted on Cloudflare's servers via `wrangler secret put` — it never appears in any file
+- `wrangler.toml` contains no secrets and is safe to commit
+- The `.wrangler/` folder is just local build cache — safe to commit or ignore
 
 ---
 
 ## Updating a mock response
 
-Endpoints are tied to a JSONBin bin ID. To update the response:
-- Go to [jsonbin.io](https://jsonbin.io), find your bin, and edit the JSON directly
-- Or generate a new endpoint from the website (creates a new bin)
+Each generated endpoint is tied to a JSONBin bin ID. To update:
+- Go to [jsonbin.io](https://jsonbin.io), find your bin, and edit the JSON directly — the endpoint URL stays the same
+- Or generate a new endpoint from the website (creates a new bin with a new URL)
 
 ---
 
-## Files
+## Author
 
-| File | Purpose |
-|---|---|
-| `index.html` | The website — validate & generate endpoints |
-| `worker.js` | Cloudflare Worker — the mock GraphQL endpoint |
-| `wrangler.toml` | Cloudflare Worker config |
+**Tanvir Shaad**
+GitHub: [github.com/tanvirshaad](https://github.com/tanvirshaad)
