@@ -4,7 +4,7 @@
 > Built by [Tanvir Shaad](https://github.com/tanvirshaad)
 
 ---
-https://tsmockql.netlify.app/
+[https://tsmockql.netlify.app/](https://mockqltest.netlify.app/)
 ---
 
 ## What it does
