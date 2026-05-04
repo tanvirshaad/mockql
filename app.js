@@ -1,6 +1,5 @@
 // ─── Config ───────────────────────────────────────────────────────────────────
-// Replace with your deployed Cloudflare Worker URL after running: wrangler deploy
-const WORKER_BASE_URL = 'https://mockql.tanvirshaad.workers.dev';
+const WORKER_BASE_URL = 'https://mockql.YOUR-SUBDOMAIN.workers.dev';
 const JSONBIN_API = 'https://api.jsonbin.io/v3/b';
 
 // ─── Example JSON ─────────────────────────────────────────────────────────────
@@ -16,8 +15,8 @@ const EXAMPLE = {
             },
             {
                 id: 'usr_002',
-                name: 'tanvir shaad',
-                email: 'tanvir@example.com',
+                name: 'Tariq Hasan',
+                email: 'tariq@example.com',
                 role: 'MEMBER',
                 active: true,
             },
@@ -25,6 +24,10 @@ const EXAMPLE = {
         _meta: { total: 2, page: 1, hasNextPage: false },
     },
 };
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let currentMode = 'create'; // 'create' | 'edit'
+let editingBinId = null; // set when a bin is loaded for editing
 
 // ─── DOM refs ─────────────────────────────────────────────────────────────────
 const editor = document.getElementById('jsonEditor');
@@ -52,6 +55,103 @@ editor.addEventListener('keydown', (e) => {
         editor.selectionStart = editor.selectionEnd = s + 2;
     }
 });
+
+// ─── Mode switching ───────────────────────────────────────────────────────────
+function switchMode(mode) {
+    currentMode = mode;
+    editingBinId = null;
+
+    const isEdit = mode === 'edit';
+
+    document.getElementById('tabCreate').classList.toggle('active', !isEdit);
+    document.getElementById('tabEdit').classList.toggle('active', isEdit);
+    document.getElementById('editRow').classList.toggle('show', isEdit);
+    document.getElementById('labelField').classList.toggle('hide', isEdit);
+    document.getElementById('generateBtn').textContent = isEdit
+        ? 'Update Mock Endpoint'
+        : 'Generate Mock Endpoint';
+
+    // Reset editor and result on mode switch
+    clearEditor();
+    document.getElementById('binIdInput').value = '';
+
+    if (isEdit) {
+        setStatus('idle', '○', 'Load an existing endpoint to start editing...');
+    }
+}
+
+// ─── Extract bin ID from URL or raw ID ───────────────────────────────────────
+function extractBinId(input) {
+    const trimmed = input.trim();
+    // If it looks like a URL, grab the last path segment
+    if (trimmed.startsWith('http')) {
+        const parts = trimmed.split('/').filter(Boolean);
+        return parts[parts.length - 1];
+    }
+    return trimmed;
+}
+
+// ─── Load existing bin ────────────────────────────────────────────────────────
+async function loadExistingBin() {
+    const apiKey = document.getElementById('apiKey').value.trim();
+    if (!apiKey) {
+        alert('Please enter your JSONBin API Key first.');
+        return;
+    }
+
+    const raw = document.getElementById('binIdInput').value.trim();
+    if (!raw) {
+        alert('Please enter an endpoint URL or Bin ID.');
+        return;
+    }
+
+    const binId = extractBinId(raw);
+    const btn = document.getElementById('loadBtn');
+    const btnTxt = document.getElementById('loadBtnText');
+
+    btn.disabled = true;
+    btnTxt.innerHTML = '<span class="spinner dark"></span>';
+
+    try {
+        const res = await fetch(`${JSONBIN_API}/${binId}/latest`, {
+            headers: { 'X-Master-Key': apiKey },
+        });
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.message || `JSONBin error: ${res.status}`);
+        }
+
+        const data = await res.json();
+        const record = data.record;
+
+        // Load into editor
+        editor.value = JSON.stringify(record, null, 2);
+        editingBinId = binId;
+
+        validateJson();
+
+        // Show the endpoint URL in the result panel as a reference
+        const endpointUrl = `${WORKER_BASE_URL}/graphql/${binId}`;
+        document.getElementById('endpointUrl').value = endpointUrl;
+        document.getElementById('resultMeta').textContent =
+            `bin: ${binId} · loaded for editing`;
+        document.getElementById('resultHeaderText').textContent =
+            'Endpoint loaded — edit and update below';
+        document.getElementById('usageSnippet').innerHTML =
+            buildSnippet(endpointUrl);
+        document.getElementById('step3').classList.add('active');
+
+        const panel = document.getElementById('resultPanel');
+        panel.classList.add('show');
+        panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (err) {
+        alert(`Failed to load bin:\n\n${err.message}`);
+    } finally {
+        btn.disabled = false;
+        btnTxt.textContent = 'Load';
+    }
+}
 
 // ─── Status helpers ───────────────────────────────────────────────────────────
 function setStatus(type, icon, msgs) {
@@ -82,7 +182,6 @@ function validateJson() {
         return null;
     }
 
-    // 1. JSON parse
     let parsed;
     try {
         parsed = JSON.parse(raw);
@@ -97,7 +196,6 @@ function validateJson() {
     const issues = [];
     const warnings = [];
 
-    // 2. Root must be an object
     if (
         typeof parsed !== 'object' ||
         Array.isArray(parsed) ||
@@ -106,7 +204,6 @@ function validateJson() {
         issues.push('Root must be a JSON object {}');
     }
 
-    // 3. GraphQL shape checks
     if (!issues.length) {
         const hasData = 'data' in parsed;
         const hasErrors = 'errors' in parsed;
@@ -152,15 +249,13 @@ function validateJson() {
     return parsed;
 }
 
-// ─── Editor actions ───────────────────────────────────────────────────────────
+// ─── Editor toolbar ───────────────────────────────────────────────────────────
 function formatJson() {
     try {
         const parsed = JSON.parse(editor.value);
         editor.value = JSON.stringify(parsed, null, 2);
         validateJson();
-    } catch (_) {
-        /* already invalid, nothing to format */
-    }
+    } catch (_) {}
 }
 
 function loadExample() {
@@ -170,19 +265,25 @@ function loadExample() {
 
 function clearEditor() {
     editor.value = '';
+    editingBinId = null;
     setStatus('idle', '○', 'Waiting for input...');
     document.getElementById('resultPanel').classList.remove('show');
 }
 
-// ─── Generate endpoint ────────────────────────────────────────────────────────
+// ─── Main action — create or update ──────────────────────────────────────────
+function handleMainAction() {
+    if (currentMode === 'edit') {
+        updateEndpoint();
+    } else {
+        generateEndpoint();
+    }
+}
+
+// ─── Create new endpoint ──────────────────────────────────────────────────────
 async function generateEndpoint() {
     const parsed = validateJson();
-
     if (!parsed) {
-        // Shake the validation bar to draw attention
-        validationBar.style.animation = 'none';
-        validationBar.offsetHeight; // force reflow
-        validationBar.style.animation = 'shake 0.3s ease';
+        shakeValidation();
         return;
     }
 
@@ -223,22 +324,76 @@ async function generateEndpoint() {
         const binId = data.metadata.id;
         const endpointUrl = `${WORKER_BASE_URL}/graphql/${binId}`;
 
-        showResult(endpointUrl, binId, label);
+        showResult(endpointUrl, binId, label, 'created');
     } catch (err) {
         alert(`Failed to create endpoint:\n\n${err.message}`);
     } finally {
         btn.disabled = false;
-        btn.innerHTML = 'Generate Mock Endpoint';
+        btn.textContent = 'Generate Mock Endpoint';
+    }
+}
+
+// ─── Update existing endpoint ─────────────────────────────────────────────────
+async function updateEndpoint() {
+    const parsed = validateJson();
+    if (!parsed) {
+        shakeValidation();
+        return;
+    }
+
+    if (!editingBinId) {
+        alert(
+            'No bin loaded. Use the "Load" button to fetch an existing endpoint first.',
+        );
+        return;
+    }
+
+    const apiKey = document.getElementById('apiKey').value.trim();
+    if (!apiKey) {
+        alert('Please enter your JSONBin.io API key.');
+        return;
+    }
+
+    const btn = document.getElementById('generateBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Updating...';
+
+    try {
+        const res = await fetch(`${JSONBIN_API}/${editingBinId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Master-Key': apiKey,
+            },
+            body: JSON.stringify(parsed),
+        });
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.message || `JSONBin error: ${res.status}`);
+        }
+
+        const endpointUrl = `${WORKER_BASE_URL}/graphql/${editingBinId}`;
+        showResult(endpointUrl, editingBinId, 'updated', 'updated');
+    } catch (err) {
+        alert(`Failed to update endpoint:\n\n${err.message}`);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Update Mock Endpoint';
     }
 }
 
 // ─── Display result ───────────────────────────────────────────────────────────
-function showResult(url, binId, label) {
+function showResult(url, binId, label, action) {
     document.getElementById('step3').classList.add('active');
     document.getElementById('endpointUrl').value = url;
     document.getElementById('resultMeta').textContent =
-        `bin: ${binId} · label: ${label}`;
+        `bin: ${binId} · ${label}`;
     document.getElementById('usageSnippet').innerHTML = buildSnippet(url);
+    document.getElementById('resultHeaderText').textContent =
+        action === 'updated'
+            ? 'Endpoint updated successfully'
+            : 'Endpoint created successfully';
 
     const panel = document.getElementById('resultPanel');
     panel.classList.add('show');
@@ -273,4 +428,11 @@ function copyEndpoint() {
             btn.classList.remove('copied');
         }, 2000);
     });
+}
+
+// ─── Shake helper ─────────────────────────────────────────────────────────────
+function shakeValidation() {
+    validationBar.style.animation = 'none';
+    validationBar.offsetHeight;
+    validationBar.style.animation = 'shake 0.3s ease';
 }

@@ -23,8 +23,8 @@
             <div class="hero">
                 <h1>Create a <em>GraphQL mock</em><br />endpoint in seconds</h1>
                 <p>
-                    // Paste your JSON response → validate → get a live endpoint
-                    URL
+                    // Paste your JSON response &rarr; validate &rarr; get a
+                    live endpoint URL
                 </p>
             </div>
 
@@ -45,13 +45,31 @@
                 </div>
             </div>
 
+            <!-- Mode tabs -->
+            <div class="mode-tabs">
+                <button
+                    class="mode-tab active"
+                    id="tabCreate"
+                    onclick="switchMode('create')"
+                >
+                    Create new
+                </button>
+                <button
+                    class="mode-tab"
+                    id="tabEdit"
+                    onclick="switchMode('edit')"
+                >
+                    Edit existing
+                </button>
+            </div>
+
             <!-- Config -->
             <div class="config-row">
                 <div class="field-group">
                     <label>JSONBin API Key</label>
                     <input type="text" id="apiKey" placeholder="$2a$10$..." />
                 </div>
-                <div class="field-group">
+                <div class="field-group" id="labelField">
                     <label>Endpoint label (optional)</label>
                     <input
                         type="text"
@@ -59,6 +77,25 @@
                         placeholder="e.g. get-user-query"
                     />
                 </div>
+            </div>
+
+            <!-- Edit mode: load by bin ID or URL -->
+            <div class="edit-row" id="editRow">
+                <div class="field-group" style="flex: 1">
+                    <label>Endpoint URL or Bin ID</label>
+                    <input
+                        type="text"
+                        id="binIdInput"
+                        placeholder="https://...workers.dev/graphql/abc123  or just  abc123"
+                    />
+                </div>
+                <button
+                    class="btn-load"
+                    id="loadBtn"
+                    onclick="loadExistingBin()"
+                >
+                    <span id="loadBtnText">Load</span>
+                </button>
             </div>
 
             <!-- Editor -->
@@ -99,17 +136,17 @@ Example:
 
             <!-- Validation -->
             <div class="validation idle" id="validationBar">
-                <span class="val-icon">○</span>
+                <span class="val-icon">&#9675;</span>
                 <div class="val-msgs">
                     <span class="val-msg">Waiting for input...</span>
                 </div>
             </div>
 
-            <!-- Generate -->
+            <!-- Generate / Update -->
             <button
                 class="btn-main"
                 id="generateBtn"
-                onclick="generateEndpoint()"
+                onclick="handleMainAction()"
             >
                 Generate Mock Endpoint
             </button>
@@ -133,7 +170,7 @@ Example:
                             stroke-linejoin="round"
                         />
                     </svg>
-                    <span class="result-header-text"
+                    <span class="result-header-text" id="resultHeaderText"
                         >Endpoint created successfully</span
                     >
                     <span class="result-header-sub" id="resultMeta"></span>
@@ -151,17 +188,17 @@ Example:
                         </button>
                     </div>
 
-                    <div class="snippet-label">Usage example — fetch</div>
+                    <div class="snippet-label">Usage example &mdash; fetch</div>
                     <div class="snippet" id="usageSnippet"></div>
 
                     <div class="info-box">
-                        <span>ℹ</span>
+                        <span>&#x2139;</span>
                         <div>
                             <strong>How it works:</strong> This endpoint accepts
                             any GraphQL POST request and always returns your
                             mock response. The Cloudflare Worker handles CORS
-                            automatically — use this URL directly in Apollo
-                            Client, urql, or any fetch call.
+                            automatically &mdash; use this URL directly in
+                            Apollo Client, urql, or any fetch call.
                         </div>
                     </div>
                 </div>
