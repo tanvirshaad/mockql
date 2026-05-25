@@ -66,6 +66,14 @@
 
             <!-- Config -->
             <div class="config-row">
+                <div class="field-group">
+                    <label>Worker URL</label>
+                    <input
+                        type="text"
+                        id="workerUrl"
+                        placeholder="https://mockql.YOUR-SUBDOMAIN.workers.dev/mock"
+                    />
+                </div>
                 <div class="field-group" id="labelField">
                     <label>Endpoint label (optional)</label>
                     <input
@@ -79,7 +87,7 @@
             <!-- Edit mode: load by bin ID or URL -->
             <div class="edit-row" id="editRow">
                 <div class="field-group" style="flex: 1">
-                    <label>Endpoint URL or Bin ID</label>
+                    <label>Endpoint URL or Mock ID</label>
                     <input
                         type="text"
                         id="binIdInput"

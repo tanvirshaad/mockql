@@ -1,5 +1,6 @@
 // ─── Config ───────────────────────────────────────────────────────────────────
-const WORKER_BASE_URL = 'https://mockql.YOUR-SUBDOMAIN.workers.dev/mock';
+const DEFAULT_WORKER_BASE_URL = 'https://mockql.tanvirshaad.workers.dev/mock';
+const WORKER_BASE_URL_KEY = 'mockql_worker_base_url';
 
 // ─── Example JSON ─────────────────────────────────────────────────────────────
 const EXAMPLE = {
@@ -33,6 +34,13 @@ const editor = document.getElementById('jsonEditor');
 const validationBar = document.getElementById('validationBar');
 const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
+const workerUrlInput = document.getElementById('workerUrl');
+
+workerUrlInput.value =
+    localStorage.getItem(WORKER_BASE_URL_KEY) || DEFAULT_WORKER_BASE_URL;
+workerUrlInput.addEventListener('input', () => {
+    localStorage.setItem(WORKER_BASE_URL_KEY, workerUrlInput.value.trim());
+});
 
 // ─── Live validation (debounced) ──────────────────────────────────────────────
 let debounceTimer;
@@ -106,7 +114,8 @@ async function loadExistingBin() {
     btnTxt.innerHTML = '<span class="spinner dark"></span>';
 
     try {
-        const res = await fetch(`${WORKER_BASE_URL}/${binId}`);
+        const workerBaseUrl = getWorkerBaseUrl();
+        const res = await fetch(`${workerBaseUrl}/${binId}`);
 
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
@@ -122,7 +131,7 @@ async function loadExistingBin() {
         validateJson();
 
         // Show the endpoint URL in the result panel as a reference
-        const endpointUrl = `${WORKER_BASE_URL}/${binId}`;
+        const endpointUrl = `${workerBaseUrl}/${binId}`;
         document.getElementById('endpointUrl').value = endpointUrl;
         document.getElementById('resultMeta').textContent =
             `mock: ${binId} · loaded for editing`;
@@ -253,6 +262,17 @@ function loadExample() {
     validateJson();
 }
 
+function getWorkerBaseUrl() {
+    const value = workerUrlInput.value.trim();
+    if (!value || value.includes('YOUR-SUBDOMAIN')) {
+        throw new Error(
+            'Set your Cloudflare Worker URL first. Paste the deployed /mock URL into the Worker URL field.',
+        );
+    }
+
+    return value.replace(/\/$/, '');
+}
+
 function clearEditor() {
     editor.value = '';
     editingBinId = null;
@@ -286,7 +306,8 @@ async function generateEndpoint() {
     btn.innerHTML = '<span class="spinner"></span>Saving to Worker...';
 
     try {
-        const res = await fetch(WORKER_BASE_URL, {
+        const workerBaseUrl = getWorkerBaseUrl();
+        const res = await fetch(workerBaseUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -301,7 +322,7 @@ async function generateEndpoint() {
 
         const data = await res.json();
         const binId = data.id;
-        const endpointUrl = data.url || `${WORKER_BASE_URL}/${binId}`;
+        const endpointUrl = data.url || `${workerBaseUrl}/${binId}`;
 
         showResult(endpointUrl, binId, label, 'created');
     } catch (err) {
@@ -332,7 +353,8 @@ async function updateEndpoint() {
     btn.innerHTML = '<span class="spinner"></span>Updating...';
 
     try {
-        const res = await fetch(`${WORKER_BASE_URL}/${editingBinId}`, {
+        const workerBaseUrl = getWorkerBaseUrl();
+        const res = await fetch(`${workerBaseUrl}/${editingBinId}`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
@@ -345,7 +367,7 @@ async function updateEndpoint() {
             throw new Error(err.message || `Worker error: ${res.status}`);
         }
 
-        const endpointUrl = `${WORKER_BASE_URL}/${editingBinId}`;
+        const endpointUrl = `${workerBaseUrl}/${editingBinId}`;
         showResult(endpointUrl, editingBinId, 'updated', 'updated');
     } catch (err) {
         alert(`Failed to update endpoint:\n\n${err.message}`);

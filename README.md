@@ -74,13 +74,15 @@ https://mockql.YOUR-SUBDOMAIN.workers.dev
 
 ### Step 2 — Update the frontend config
 
-Open `app.js` and update this line at the top:
+Open the website and paste your deployed Worker URL into the **Worker URL** field.
 
-```js
-const WORKER_BASE_URL = 'https://mockql.YOUR-SUBDOMAIN.workers.dev/mock';
+Use the `/mock` base URL, for example:
+
+```text
+https://mockql.YOUR-SUBDOMAIN.workers.dev/mock
 ```
 
-Replace `YOUR-SUBDOMAIN` with your actual Cloudflare Workers subdomain.
+The app remembers the value in your browser for next time.
 
 ---
 
@@ -101,7 +103,7 @@ Replace `YOUR-SUBDOMAIN` with your actual Cloudflare Workers subdomain.
 
 ### Step 4 — Set the worker URL
 
-1. Make sure `app.js` points at your deployed Worker URL
+1. Paste your deployed Worker URL into the **Worker URL** field
 2. The site no longer needs any API key or secret
 
 ---
