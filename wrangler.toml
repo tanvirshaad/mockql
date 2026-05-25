@@ -1,0 +1,14 @@
+name = "mockql"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# Your worker will be available at:
+# https://mockql.YOUR-SUBDOMAIN.workers.dev
+
+[vars]
+# Public vars go here (none needed for MockQL)
+# Mock storage uses the MOCKQL_TESTER KV binding below
+
+[[kv_namespaces]]
+binding = "MOCKQL_TESTER"
+id = "b3d4c4764527429a9cb084d456de47d3"

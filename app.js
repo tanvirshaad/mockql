@@ -1,6 +1,5 @@
 // ─── Config ───────────────────────────────────────────────────────────────────
-const WORKER_BASE_URL = 'https://mockql.YOUR-SUBDOMAIN.workers.dev';
-const JSONBIN_API = 'https://api.jsonbin.io/v3/b';
+const WORKER_BASE_URL = 'https://mockql.YOUR-SUBDOMAIN.workers.dev/mock';
 
 // ─── Example JSON ─────────────────────────────────────────────────────────────
 const EXAMPLE = {
@@ -80,7 +79,7 @@ function switchMode(mode) {
     }
 }
 
-// ─── Extract bin ID from URL or raw ID ───────────────────────────────────────
+// ─── Extract mock ID from URL or raw ID ──────────────────────────────────────
 function extractBinId(input) {
     const trimmed = input.trim();
     // If it looks like a URL, grab the last path segment
@@ -93,15 +92,9 @@ function extractBinId(input) {
 
 // ─── Load existing bin ────────────────────────────────────────────────────────
 async function loadExistingBin() {
-    const apiKey = document.getElementById('apiKey').value.trim();
-    if (!apiKey) {
-        alert('Please enter your JSONBin API Key first.');
-        return;
-    }
-
     const raw = document.getElementById('binIdInput').value.trim();
     if (!raw) {
-        alert('Please enter an endpoint URL or Bin ID.');
+        alert('Please enter an endpoint URL or mock ID.');
         return;
     }
 
@@ -113,17 +106,14 @@ async function loadExistingBin() {
     btnTxt.innerHTML = '<span class="spinner dark"></span>';
 
     try {
-        const res = await fetch(`${JSONBIN_API}/${binId}/latest`, {
-            headers: { 'X-Master-Key': apiKey },
-        });
+        const res = await fetch(`${WORKER_BASE_URL}/${binId}`);
 
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
-            throw new Error(err.message || `JSONBin error: ${res.status}`);
+            throw new Error(err.message || `Worker error: ${res.status}`);
         }
 
-        const data = await res.json();
-        const record = data.record;
+        const record = await res.json();
 
         // Load into editor
         editor.value = JSON.stringify(record, null, 2);
@@ -132,10 +122,10 @@ async function loadExistingBin() {
         validateJson();
 
         // Show the endpoint URL in the result panel as a reference
-        const endpointUrl = `${WORKER_BASE_URL}/graphql/${binId}`;
+        const endpointUrl = `${WORKER_BASE_URL}/${binId}`;
         document.getElementById('endpointUrl').value = endpointUrl;
         document.getElementById('resultMeta').textContent =
-            `bin: ${binId} · loaded for editing`;
+            `mock: ${binId} · loaded for editing`;
         document.getElementById('resultHeaderText').textContent =
             'Endpoint loaded — edit and update below';
         document.getElementById('usageSnippet').innerHTML =
@@ -287,42 +277,31 @@ async function generateEndpoint() {
         return;
     }
 
-    const apiKey = document.getElementById('apiKey').value.trim();
-    if (!apiKey) {
-        alert(
-            'Please enter your JSONBin.io API key.\n\nGet a free key at: https://jsonbin.io',
-        );
-        return;
-    }
-
     const label =
         document.getElementById('endpointLabel').value.trim() ||
         'mock-endpoint';
     const btn = document.getElementById('generateBtn');
 
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span>Saving to JSONBin...';
+    btn.innerHTML = '<span class="spinner"></span>Saving to Worker...';
 
     try {
-        const res = await fetch(JSONBIN_API, {
+        const res = await fetch(WORKER_BASE_URL, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'X-Master-Key': apiKey,
-                'X-Bin-Name': label,
-                'X-Bin-Private': 'false',
             },
             body: JSON.stringify(parsed),
         });
 
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
-            throw new Error(err.message || `JSONBin error: ${res.status}`);
+            throw new Error(err.message || `Worker error: ${res.status}`);
         }
 
         const data = await res.json();
-        const binId = data.metadata.id;
-        const endpointUrl = `${WORKER_BASE_URL}/graphql/${binId}`;
+        const binId = data.id;
+        const endpointUrl = data.url || `${WORKER_BASE_URL}/${binId}`;
 
         showResult(endpointUrl, binId, label, 'created');
     } catch (err) {
@@ -343,14 +322,8 @@ async function updateEndpoint() {
 
     if (!editingBinId) {
         alert(
-            'No bin loaded. Use the "Load" button to fetch an existing endpoint first.',
+            'No mock loaded. Use the "Load" button to fetch an existing endpoint first.',
         );
-        return;
-    }
-
-    const apiKey = document.getElementById('apiKey').value.trim();
-    if (!apiKey) {
-        alert('Please enter your JSONBin.io API key.');
         return;
     }
 
@@ -359,21 +332,20 @@ async function updateEndpoint() {
     btn.innerHTML = '<span class="spinner"></span>Updating...';
 
     try {
-        const res = await fetch(`${JSONBIN_API}/${editingBinId}`, {
+        const res = await fetch(`${WORKER_BASE_URL}/${editingBinId}`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
-                'X-Master-Key': apiKey,
             },
             body: JSON.stringify(parsed),
         });
 
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
-            throw new Error(err.message || `JSONBin error: ${res.status}`);
+            throw new Error(err.message || `Worker error: ${res.status}`);
         }
 
-        const endpointUrl = `${WORKER_BASE_URL}/graphql/${editingBinId}`;
+        const endpointUrl = `${WORKER_BASE_URL}/${editingBinId}`;
         showResult(endpointUrl, editingBinId, 'updated', 'updated');
     } catch (err) {
         alert(`Failed to update endpoint:\n\n${err.message}`);
@@ -388,7 +360,7 @@ function showResult(url, binId, label, action) {
     document.getElementById('step3').classList.add('active');
     document.getElementById('endpointUrl').value = url;
     document.getElementById('resultMeta').textContent =
-        `bin: ${binId} · ${label}`;
+        `mock: ${binId} · ${label}`;
     document.getElementById('usageSnippet').innerHTML = buildSnippet(url);
     document.getElementById('resultHeaderText').textContent =
         action === 'updated'

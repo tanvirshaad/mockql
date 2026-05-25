@@ -1,11 +1,13 @@
 /**
  * MockQL — Cloudflare Worker
  *
- * Accepts any GraphQL POST request at:
- *   POST /graphql/:binId
+ * Stores mock JSON in KV and serves it back from:
+ *   POST /mock/:id
+ *   GET  /mock/:id
+ *   PUT  /mock/:id
  *
- * Fetches the stored mock JSON from JSONBin.io
- * and returns it as the GraphQL response.
+ * Creates a new mock with:
+ *   POST /mock
  *
  * Deploy:
  *   1. npm install -g wrangler
@@ -13,99 +15,183 @@
  *   3. wrangler deploy
  */
 
-// ── Config ────────────────────────────────────────────────────
-// Set this in your Cloudflare Worker environment variables
-// wrangler secret put JSONBIN_MASTER_KEY
-// Or hardcode for testing (not recommended for production):
-// const JSONBIN_MASTER_KEY = '$2a$10$...';
-
-const JSONBIN_BASE = 'https://api.jsonbin.io/v3/b';
-
 // ── CORS headers ──────────────────────────────────────────────
 const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
-  'Access-Control-Max-Age': '86400',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
+    'Access-Control-Allow-Headers':
+        'Content-Type, Authorization, X-Requested-With',
+    'Access-Control-Max-Age': '86400',
 };
 
 // ── Main handler ──────────────────────────────────────────────
 export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
+    async fetch(request, env) {
+        const url = new URL(request.url);
 
-    // Handle CORS preflight
-    if (request.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: CORS });
-    }
+        // Handle CORS preflight
+        if (request.method === 'OPTIONS') {
+            return new Response(null, { status: 204, headers: CORS });
+        }
 
-    // Health check
-    if (url.pathname === '/' || url.pathname === '/health') {
-      return json({ status: 'ok', service: 'MockQL Worker' });
-    }
+        // Health check
+        if (url.pathname === '/' || url.pathname === '/health') {
+            return json({ status: 'ok', service: 'MockQL Worker' });
+        }
 
-    // Route: POST /graphql/:binId
-    const match = url.pathname.match(/^\/graphql\/([a-zA-Z0-9]+)$/);
-    if (!match) {
-      return json({ errors: [{ message: 'Not found. Use POST /graphql/:binId' }] }, 404);
-    }
+        if (url.pathname === '/mock' && request.method === 'POST') {
+            return createMock(request, env, url.origin);
+        }
 
-    const binId = match[1];
+        const match = url.pathname.match(/^\/mock\/([a-zA-Z0-9]+)$/);
+        if (!match) {
+            return json(
+                { errors: [{ message: 'Not found. Use /mock or /mock/:id' }] },
+                404,
+            );
+        }
 
-    // Only allow POST and GET for GraphQL
-    if (!['POST', 'GET'].includes(request.method)) {
-      return json({ errors: [{ message: `Method ${request.method} not allowed` }] }, 405);
-    }
+        const mockId = match[1];
 
-    // Fetch mock from JSONBin
-    const masterKey = env.JSONBIN_MASTER_KEY;
-    if (!masterKey) {
-      return json({ errors: [{ message: 'Worker misconfigured: JSONBIN_MASTER_KEY not set' }] }, 500);
-    }
+        if (request.method === 'PUT') {
+            return updateMock(request, env, mockId, url.origin);
+        }
 
-    let mockResponse;
-    try {
-      mockResponse = await fetchFromJSONBin(binId, masterKey);
-    } catch (err) {
-      if (err.status === 404) {
-        return json({ errors: [{ message: `Mock not found for bin: ${binId}` }] }, 404);
-      }
-      return json({ errors: [{ message: `Failed to fetch mock: ${err.message}` }] }, 502);
-    }
+        if (request.method === 'GET' || request.method === 'POST') {
+            return serveMock(env, mockId);
+        }
 
-    // Return the mock response
-    return json(mockResponse);
-  }
+        return json(
+            { errors: [{ message: `Method ${request.method} not allowed` }] },
+            405,
+        );
+    },
 };
 
-// ── Fetch from JSONBin ────────────────────────────────────────
-async function fetchFromJSONBin(binId, masterKey) {
-  const res = await fetch(`${JSONBIN_BASE}/${binId}/latest`, {
-    headers: {
-      'X-Master-Key': masterKey,
-    },
-    // Cache for 30 seconds to avoid hammering JSONBin on every request
-    cf: { cacheTtl: 30, cacheEverything: true },
-  });
+async function createMock(request, env, origin) {
+    const store = getStore(env);
+    if (!store) {
+        return json(
+            {
+                errors: [
+                    {
+                        message:
+                            'Worker misconfigured: MOCKQL_TESTER binding not set',
+                    },
+                ],
+            },
+            500,
+        );
+    }
 
-  if (!res.ok) {
-    const err = new Error(`JSONBin responded with ${res.status}`);
-    err.status = res.status;
-    throw err;
-  }
+    const payload = await readJsonBody(request);
+    if ('errors' in payload) {
+        return json(payload, 400);
+    }
 
-  const data = await res.json();
-  // JSONBin wraps response in { record: { ...yourData } }
-  return data.record;
+    const mockId = makeMockId();
+    await store.put(mockId, JSON.stringify(payload));
+
+    return json(
+        {
+            id: mockId,
+            url: `${origin}/mock/${mockId}`,
+        },
+        201,
+    );
+}
+
+async function updateMock(request, env, mockId, origin) {
+    const store = getStore(env);
+    if (!store) {
+        return json(
+            {
+                errors: [
+                    {
+                        message:
+                            'Worker misconfigured: MOCKQL_TESTER binding not set',
+                    },
+                ],
+            },
+            500,
+        );
+    }
+
+    const existing = await store.get(mockId);
+    if (existing === null) {
+        return json(
+            { errors: [{ message: `Mock not found: ${mockId}` }] },
+            404,
+        );
+    }
+
+    const payload = await readJsonBody(request);
+    if ('errors' in payload) {
+        return json(payload, 400);
+    }
+
+    await store.put(mockId, JSON.stringify(payload));
+
+    return json({ id: mockId, url: `${origin}/mock/${mockId}` });
+}
+
+async function serveMock(env, mockId) {
+    const store = getStore(env);
+    if (!store) {
+        return json(
+            {
+                errors: [
+                    {
+                        message:
+                            'Worker misconfigured: MOCKQL_TESTER binding not set',
+                    },
+                ],
+            },
+            500,
+        );
+    }
+
+    const stored = await store.get(mockId);
+    if (stored === null) {
+        return json(
+            { errors: [{ message: `Mock not found: ${mockId}` }] },
+            404,
+        );
+    }
+
+    try {
+        return json(JSON.parse(stored));
+    } catch {
+        return json(
+            { errors: [{ message: `Stored mock ${mockId} is invalid JSON` }] },
+            500,
+        );
+    }
+}
+
+function getStore(env) {
+    return env.MOCKQL_TESTER || null;
+}
+
+async function readJsonBody(request) {
+    try {
+        return await request.json();
+    } catch {
+        return { errors: [{ message: 'Request body must be valid JSON' }] };
+    }
+}
+
+function makeMockId() {
+    return crypto.randomUUID().replace(/-/g, '').slice(0, 12);
 }
 
 // ── JSON response helper ──────────────────────────────────────
 function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      ...CORS,
-    },
-  });
+    return new Response(JSON.stringify(data), {
+        status,
+        headers: {
+            'Content-Type': 'application/json',
+            ...CORS,
+        },
+    });
 }
