@@ -1,197 +1,291 @@
 /**
- * MockQL — Cloudflare Worker
+ * MockQL — Cloudflare Worker (Dual Backend Edition)
  *
- * Stores mock JSON in KV and serves it back from:
- *   POST /mock/:id
- *   GET  /mock/:id
- *   PUT  /mock/:id
+ * Supports both:
+ *   - Cloudflare KV (free tier, 1,000 writes/day)
+ *   - Supabase Postgres (free tier, unlimited writes)
  *
- * Creates a new mock with:
- *   POST /mock
+ * Routes:
+ *   POST   /mock              → save new mock (backend via ?backend=kv|postgres)
+ *   GET    /mock/:id          → fetch mock (auto-detects backend from id prefix)
+ *   PUT    /mock/:id          → update mock (auto-detects backend from id prefix)
+ *   POST   /graphql/:id       → serve mock as GraphQL endpoint
+ *   GET    /graphql/:id       → same, for GET clients
  *
- * Deploy:
- *   1. npm install -g wrangler
- *   2. wrangler login
- *   3. wrangler deploy
+ * ID format:
+ *   kv_xxxxx      = stored in Cloudflare KV
+ *   pg_xxxxx      = stored in Supabase Postgres
  */
 
-// ── CORS headers ──────────────────────────────────────────────
 const CORS = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
-    'Access-Control-Allow-Headers':
-        'Content-Type, Authorization, X-Requested-With',
+    'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Max-Age': '86400',
 };
 
-// ── Main handler ──────────────────────────────────────────────
 export default {
     async fetch(request, env) {
         const url = new URL(request.url);
 
-        // Handle CORS preflight
         if (request.method === 'OPTIONS') {
             return new Response(null, { status: 204, headers: CORS });
         }
 
-        // Health check
         if (url.pathname === '/' || url.pathname === '/health') {
-            return json({ status: 'ok', service: 'MockQL Worker' });
+            return json({ status: 'ok', service: 'MockQL', version: '2.0' });
         }
 
+        // ── POST /mock ──────────────────────────────────────────────
         if (url.pathname === '/mock' && request.method === 'POST') {
-            return createMock(request, env, url.origin);
+            const backend = url.searchParams.get('backend') || 'kv';
+            let body;
+            try {
+                body = await request.json();
+            } catch {
+                return json({ error: 'Invalid JSON' }, 400);
+            }
+
+            const label = url.searchParams.get('label') || 'mock-endpoint';
+
+            if (backend === 'postgres') {
+                return await saveToDB(body, label, env);
+            } else {
+                return await saveToKV(body, label, env);
+            }
         }
 
-        const match = url.pathname.match(/^\/mock\/([a-zA-Z0-9]+)$/);
-        if (!match) {
-            return json(
-                { errors: [{ message: 'Not found. Use /mock or /mock/:id' }] },
-                404,
-            );
-        }
-
-        const mockId = match[1];
-
-        if (request.method === 'PUT') {
-            return updateMock(request, env, mockId, url.origin);
-        }
-
-        if (request.method === 'GET' || request.method === 'POST') {
-            return serveMock(env, mockId);
-        }
-
-        return json(
-            { errors: [{ message: `Method ${request.method} not allowed` }] },
-            405,
+        // ── GET /mock/:id ───────────────────────────────────────────
+        const getMatch = url.pathname.match(
+            /^\/mock\/([a-z]+_[a-zA-Z0-9_-]+)$/,
         );
+        if (getMatch && request.method === 'GET') {
+            const id = getMatch[1];
+            if (id.startsWith('pg_')) {
+                return await loadFromDB(id, env);
+            } else {
+                return await loadFromKV(id, env);
+            }
+        }
+
+        // ── PUT /mock/:id ───────────────────────────────────────────
+        const putMatch = url.pathname.match(
+            /^\/mock\/([a-z]+_[a-zA-Z0-9_-]+)$/,
+        );
+        if (putMatch && request.method === 'PUT') {
+            const id = putMatch[1];
+            let body;
+            try {
+                body = await request.json();
+            } catch {
+                return json({ error: 'Invalid JSON' }, 400);
+            }
+
+            if (id.startsWith('pg_')) {
+                return await updateDB(id, body, env);
+            } else {
+                return await updateKV(id, body, env);
+            }
+        }
+
+        // ── GET|POST /graphql/:id ───────────────────────────────────
+        const gqlMatch = url.pathname.match(
+            /^\/graphql\/([a-z]+_[a-zA-Z0-9_-]+)$/,
+        );
+        if (gqlMatch && ['GET', 'POST'].includes(request.method)) {
+            const id = gqlMatch[1];
+            let data;
+
+            if (id.startsWith('pg_')) {
+                const res = await loadFromDB(id, env);
+                if (res.status !== 200) return res;
+                const payload = await res.json();
+                data = payload.data;
+            } else {
+                const res = await loadFromKV(id, env);
+                if (res.status !== 200) return res;
+                const payload = await res.json();
+                data = payload.data;
+            }
+
+            return json(data);
+        }
+
+        return json({ error: 'Not found' }, 404);
     },
 };
 
-async function createMock(request, env, origin) {
-    const store = getStore(env);
-    if (!store) {
-        return json(
-            {
-                errors: [
-                    {
-                        message:
-                            'Worker misconfigured: MOCKQL_TESTER binding not set',
-                    },
-                ],
-            },
-            500,
-        );
-    }
+// ─────────────────────────────────────────────────────────────────────────────
+// KV BACKEND
+// ─────────────────────────────────────────────────────────────────────────────
 
-    const payload = await readJsonBody(request);
-    if ('errors' in payload) {
-        return json(payload, 400);
-    }
-
-    const mockId = makeMockId();
-    await store.put(mockId, JSON.stringify(payload));
-
+async function saveToKV(data, label, env) {
+    const id = 'kv_' + generateId();
+    const metadata = { label, createdAt: new Date().toISOString() };
+    await env.MOCK_STORE_KV.put(id, JSON.stringify(data), { metadata });
     return json(
-        {
-            id: mockId,
-            url: `${origin}/mock/${mockId}`,
-        },
+        { id, label, backend: 'kv', createdAt: metadata.createdAt },
         201,
     );
 }
 
-async function updateMock(request, env, mockId, origin) {
-    const store = getStore(env);
-    if (!store) {
-        return json(
-            {
-                errors: [
-                    {
-                        message:
-                            'Worker misconfigured: MOCKQL_TESTER binding not set',
-                    },
-                ],
-            },
-            500,
-        );
+async function loadFromKV(id, env) {
+    const stored = await env.MOCK_STORE_KV.getWithMetadata(id, {
+        type: 'json',
+    });
+    if (!stored.value) {
+        return json({ error: `Mock not found: ${id}` }, 404);
     }
-
-    const existing = await store.get(mockId);
-    if (existing === null) {
-        return json(
-            { errors: [{ message: `Mock not found: ${mockId}` }] },
-            404,
-        );
-    }
-
-    const payload = await readJsonBody(request);
-    if ('errors' in payload) {
-        return json(payload, 400);
-    }
-
-    await store.put(mockId, JSON.stringify(payload));
-
-    return json({ id: mockId, url: `${origin}/mock/${mockId}` });
+    return json({ id, data: stored.value, metadata: stored.metadata });
 }
 
-async function serveMock(env, mockId) {
-    const store = getStore(env);
-    if (!store) {
-        return json(
-            {
-                errors: [
-                    {
-                        message:
-                            'Worker misconfigured: MOCKQL_TESTER binding not set',
-                    },
-                ],
-            },
-            500,
-        );
+async function updateKV(id, data, env) {
+    const existing = await env.MOCK_STORE_KV.getWithMetadata(id);
+    if (!existing.value) {
+        return json({ error: `Mock not found: ${id}` }, 404);
+    }
+    const metadata = {
+        ...(existing.metadata || {}),
+        updatedAt: new Date().toISOString(),
+    };
+    await env.MOCK_STORE_KV.put(id, JSON.stringify(data), { metadata });
+    return json({ id, backend: 'kv', updatedAt: metadata.updatedAt });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POSTGRES BACKEND (Supabase)
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function saveToDB(data, label, env) {
+    const supabaseUrl = env.SUPABASE_URL;
+    const supabaseKey = env.SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+        return json({ error: 'Postgres backend not configured' }, 500);
     }
 
-    const stored = await store.get(mockId);
-    if (stored === null) {
+    const id = 'pg_' + generateId();
+
+    try {
+        const res = await fetch(`${supabaseUrl}/rest/v1/mocks`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                apikey: supabaseKey,
+                Authorization: `Bearer ${supabaseKey}`,
+            },
+            body: JSON.stringify({ id, data, label }),
+        });
+
+        if (!res.ok) {
+            const err = await res.text();
+            return json({ error: `Postgres error: ${err}` }, 502);
+        }
+
         return json(
-            { errors: [{ message: `Mock not found: ${mockId}` }] },
-            404,
+            {
+                id,
+                label,
+                backend: 'postgres',
+                createdAt: new Date().toISOString(),
+            },
+            201,
         );
+    } catch (err) {
+        return json({ error: `Postgres error: ${err.message}` }, 502);
+    }
+}
+
+async function loadFromDB(id, env) {
+    const supabaseUrl = env.SUPABASE_URL;
+    const supabaseKey = env.SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+        return json({ error: 'Postgres backend not configured' }, 500);
     }
 
     try {
-        return json(JSON.parse(stored));
-    } catch {
-        return json(
-            { errors: [{ message: `Stored mock ${mockId} is invalid JSON` }] },
-            500,
-        );
+        const res = await fetch(`${supabaseUrl}/rest/v1/mocks?id=eq.${id}`, {
+            headers: {
+                apikey: supabaseKey,
+                Authorization: `Bearer ${supabaseKey}`,
+            },
+        });
+
+        if (!res.ok) {
+            return json({ error: 'Postgres error' }, 502);
+        }
+
+        const rows = await res.json();
+        if (!rows || rows.length === 0) {
+            return json({ error: `Mock not found: ${id}` }, 404);
+        }
+
+        const row = rows[0];
+        return json({
+            id,
+            data: row.data,
+            metadata: {
+                label: row.label,
+                createdAt: row.created_at,
+                updatedAt: row.updated_at,
+            },
+        });
+    } catch (err) {
+        return json({ error: `Postgres error: ${err.message}` }, 502);
     }
 }
 
-function getStore(env) {
-    return env.MOCKQL_TESTER || null;
-}
+async function updateDB(id, data, env) {
+    const supabaseUrl = env.SUPABASE_URL;
+    const supabaseKey = env.SUPABASE_ANON_KEY;
 
-async function readJsonBody(request) {
+    if (!supabaseUrl || !supabaseKey) {
+        return json({ error: 'Postgres backend not configured' }, 500);
+    }
+
     try {
-        return await request.json();
-    } catch {
-        return { errors: [{ message: 'Request body must be valid JSON' }] };
+        const res = await fetch(`${supabaseUrl}/rest/v1/mocks?id=eq.${id}`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                apikey: supabaseKey,
+                Authorization: `Bearer ${supabaseKey}`,
+            },
+            body: JSON.stringify({
+                data,
+                updated_at: new Date().toISOString(),
+            }),
+        });
+
+        if (!res.ok) {
+            return json({ error: 'Postgres error' }, 502);
+        }
+
+        return json({
+            id,
+            backend: 'postgres',
+            updatedAt: new Date().toISOString(),
+        });
+    } catch (err) {
+        return json({ error: `Postgres error: ${err.message}` }, 502);
     }
 }
 
-function makeMockId() {
-    return crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+function generateId() {
+    return Array.from(crypto.getRandomValues(new Uint8Array(12)))
+        .map((b) => b.toString(36).padStart(2, '0'))
+        .join('')
+        .slice(0, 12);
 }
 
-// ── JSON response helper ──────────────────────────────────────
 function json(data, status = 200) {
     return new Response(JSON.stringify(data), {
         status,
-        headers: {
-            'Content-Type': 'application/json',
-            ...CORS,
-        },
+        headers: { 'Content-Type': 'application/json', ...CORS },
     });
 }

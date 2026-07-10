@@ -9,7 +9,6 @@
             rel="stylesheet"
         />
         <link rel="stylesheet" href="style.css" />
-        <link rel="icon" type="image/x-icon" href="images/icon.png" />
     </head>
     <body>
         <div class="wrap">
@@ -18,7 +17,7 @@
                     <div class="logo-icon">{}</div>
                     <div class="logo-text">Mock<span>QL</span></div>
                 </div>
-                <span class="tag">v1.0.0</span>
+                <span class="tag">v2.1.0</span>
             </header>
 
             <div class="hero">
@@ -64,15 +63,31 @@
                 </button>
             </div>
 
-            <!-- Config -->
-            <div class="config-row">
+            <!-- Config — create mode only -->
+            <div class="config-row" id="storageChoice">
                 <div class="field-group">
-                    <label>Worker URL</label>
-                    <input
-                        type="text"
-                        id="workerUrl"
-                        placeholder="https://mockql.YOUR-SUBDOMAIN.workers.dev/mock"
-                    />
+                    <label>Storage backend</label>
+                    <div class="radio-group">
+                        <label class="radio-label">
+                            <input
+                                type="radio"
+                                name="backend"
+                                value="kv"
+                                checked
+                            />
+                            <span>Cloudflare KV</span>
+                            <span class="radio-hint">1K writes/day, free</span>
+                        </label>
+                        <label class="radio-label">
+                            <input
+                                type="radio"
+                                name="backend"
+                                value="postgres"
+                            />
+                            <span>Supabase Postgres</span>
+                            <span class="radio-hint">Unlimited, free</span>
+                        </label>
+                    </div>
                 </div>
                 <div class="field-group" id="labelField">
                     <label>Endpoint label (optional)</label>
@@ -84,14 +99,14 @@
                 </div>
             </div>
 
-            <!-- Edit mode: load by bin ID or URL -->
+            <!-- Edit mode: load by ID or URL -->
             <div class="edit-row" id="editRow">
                 <div class="field-group" style="flex: 1">
                     <label>Endpoint URL or Mock ID</label>
                     <input
                         type="text"
                         id="binIdInput"
-                        placeholder="https://...workers.dev/mock/abc123  or just  abc123"
+                        placeholder="https://...workers.dev/graphql/kv_abc123  or  pg_xyz789"
                     />
                 </div>
                 <button
@@ -201,9 +216,9 @@ Example:
                         <div>
                             <strong>How it works:</strong> This endpoint accepts
                             any GraphQL POST request and always returns your
-                            mock response. The Cloudflare Worker handles CORS
-                            automatically &mdash; use this URL directly in
-                            Apollo Client, urql, or any fetch call.
+                            mock response. CORS is handled automatically &mdash;
+                            use this URL directly in Apollo Client, urql, or any
+                            fetch call.
                         </div>
                     </div>
                 </div>

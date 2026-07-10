@@ -1,15 +1,29 @@
-# MockQL — GraphQL Mock Endpoint Generator
+# MockQL — GraphQL Mock Endpoint Generator (v2.1)
 
 > Create a live GraphQL mock endpoint from a JSON response in seconds.
+> Choose your storage: Cloudflare KV or Supabase Postgres.
 > Built by [Tanvir Shaad](https://github.com/tanvirshaad)
 
 ---
 [https://mockqltest.netlify.app/]
 ---
 
-## What it does
 
-MockQL lets you write a GraphQL JSON response manually, validates its structure, stores it in Cloudflare KV, and gives you a live mock endpoint powered by a Cloudflare Worker — ready to plug into any app.
+## What's New (v2.1)
+
+✅ Dual storage backends: Cloudflare KV + Supabase Postgres
+✅ User chooses backend per mock
+✅ Auto-detection when editing
+✅ No JSONBin dependency — never down again
+
+---
+
+## Storage Options
+
+| Backend | Limit | Cost | Best For |
+|---|---|---|---|
+| **Cloudflare KV** | 1,000 writes/day | Free | Small projects, testing |
+| **Supabase Postgres** | Unlimited writes | Free | Production, heavy use |
 
 ---
 
@@ -19,143 +33,311 @@ MockQL lets you write a GraphQL JSON response manually, validates its structure,
 |---|---|---|
 | Frontend | HTML + CSS + Vanilla JS | Free |
 | Hosting | Netlify | Free |
-| Mock storage | Cloudflare KV | Free |
 | Endpoint | Cloudflare Workers | Free |
+| Storage | KV or Postgres | Free |
 
 ---
 
-## Project structure
+## Project Structure
 
 ```
 mockql/
-├── index.html        # UI — validate & generate endpoints
-├── style.css         # All styles and animations
-├── app.js            # All logic — validation, API calls, clipboard
-├── worker.js         # Cloudflare Worker — the mock GraphQL endpoint
-└── wrangler.toml     # Cloudflare Worker config
+├── index.html        # UI with backend choice
+├── style.css         # Styles
+├── app.js            # Logic (both backends)
+├── worker.js         # Cloudflare Worker (dual backend)
+└── wrangler.toml     # Cloudflare config
 ```
 
 ---
 
-## Setup guide
+## Setup Guide
 
-### What you'll need
-- A free [Cloudflare](https://cloudflare.com) account
-- A free [Netlify](https://netlify.com) account
+### Prerequisites
+
+- Cloudflare account (free)
+- Netlify account (free)
+- Optionally: Supabase account (free, only if using Postgres backend)
 
 ---
 
-### Step 1 — Deploy the Cloudflare Worker
+### Step 1 — Deploy Cloudflare Worker (with KV)
 
 ```bash
-# Install Wrangler CLI
 npm install -g wrangler
-
-# Login to Cloudflare
 wrangler login
 
-# Register your workers.dev subdomain first (if not done yet)
-# Go to dash.cloudflare.com → Workers & Pages → pick a subdomain
+# Create KV namespace
+wrangler kv namespace create MOCK_STORE
 
-# Create a KV namespace for mock storage
-wrangler kv namespace create MOCKQL_TESTER
-# Paste the namespace ID into wrangler.toml
+# Copy the returned ID into wrangler.toml under [kv_namespaces]
+# Edit wrangler.toml and paste: id = "YOUR_KV_NAMESPACE_ID"
 
-# Deploy the worker
+# Deploy
 wrangler deploy
 ```
 
-After deploying, Wrangler prints your Worker URL:
+**Output:** Your Worker URL
 ```
 https://mockql.YOUR-SUBDOMAIN.workers.dev
 ```
 
 ---
 
-### Step 2 — Update the frontend config
+### Step 2 — (Optional) Set up Supabase for Postgres Backend
 
-Open the website and paste your deployed Worker URL into the **Worker URL** field.
+If you want to use the **Supabase Postgres** storage option (unlimited writes):
 
-Use the `/mock` base URL, for example:
+#### 2a. Create Supabase Project
 
-```text
-https://mockql.YOUR-SUBDOMAIN.workers.dev/mock
+1. Go to [supabase.com](https://supabase.com)
+2. Sign up / log in
+3. Create a new project (free tier)
+4. Copy your **Project URL** (Settings → API)
+5. Copy your **anon public key** (Settings → API)
+
+#### 2b. Create the `mocks` table
+
+Go to **SQL Editor** in Supabase and run:
+
+```sql
+CREATE TABLE mocks (
+  id TEXT PRIMARY KEY,
+  data JSONB NOT NULL,
+  label TEXT DEFAULT 'mock-endpoint',
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Enable Row Level Security (RLS) - set to public for now
+ALTER TABLE mocks ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Mocks are publicly readable" ON mocks
+  FOR SELECT USING (true);
+
+CREATE POLICY "Mocks are publicly insertable" ON mocks
+  FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Mocks are publicly updatable" ON mocks
+  FOR UPDATE USING (true);
 ```
 
-The app remembers the value in your browser for next time.
+#### 2c. Add Supabase config to Worker
+
+```bash
+wrangler secret put SUPABASE_URL
+# Paste your Supabase Project URL
+
+wrangler secret put SUPABASE_ANON_KEY
+# Paste your anon public key
+
+wrangler deploy
+```
 
 ---
 
-### Step 3 — Deploy the website to Netlify
+### Step 3 — Update Frontend Config
 
-**Option A — Drag & drop (fastest)**
-1. Go to [app.netlify.com](https://app.netlify.com) and log in
-2. Drag your project folder (containing `index.html`, `style.css`, `app.js`) onto the deploy zone
-3. Netlify gives you a live URL instantly
+Open `app.js` and update:
 
-**Option B — GitHub (recommended for updates)**
-1. Push your project to a GitHub repo
-2. Go to Netlify → Add new site → Import from GitHub
-3. Select the repo → Deploy
-4. Every future `git push` auto-deploys
+```js
+const WORKER_BASE_URL = 'https://mockql.YOUR-SUBDOMAIN.workers.dev';
+```
+
+Replace `YOUR-SUBDOMAIN` with your actual Cloudflare Workers subdomain.
 
 ---
 
-### Step 4 — Set the worker URL
+### Step 4 — Deploy Website to Netlify
 
-1. Paste your deployed Worker URL into the **Worker URL** field
-2. The site no longer needs any API key or secret
+**Option A — Drag & Drop**
+1. Go to [app.netlify.com](https://app.netlify.com)
+2. Drag `index.html`, `style.css`, `app.js` into the deploy zone
+3. Done — you get a live URL
+
+**Option B — GitHub**
+1. Push to GitHub repo
+2. Connect Netlify to the repo
+3. Auto-deploys on every push
 
 ---
 
-## How to use
+## How to Use
 
-1. Open your live Netlify site
-2. The website talks to your Worker directly, so no API key is needed
-3. Write or paste your mock GraphQL JSON response
-4. Optionally give the endpoint a label (e.g. `get-user`)
+### Creating an Endpoint
+
+1. Open your Netlify site
+2. Enter your mock JSON response in the editor
+3. Choose storage backend:
+   - **Cloudflare KV** — free, 1K writes/day limit
+   - **Supabase Postgres** — free, unlimited writes (requires setup)
+4. Add optional endpoint label
 5. Click **Generate Mock Endpoint**
-6. Copy the generated URL:
-   ```
-   https://mockql.YOUR-SUBDOMAIN.workers.dev/mock/64a3f2b1e3267...
-   ```
-7. Use it in your app as a GraphQL endpoint:
-   ```js
-   const client = new ApolloClient({
-     uri: 'https://mockql.YOUR-SUBDOMAIN.workers.dev/mock/64a3f2b1e3267...',
-     cache: new InMemoryCache(),
-   });
-   ```
+6. Copy the generated URL
+
+### Editing an Endpoint
+
+1. Switch to **Edit existing** tab
+2. Paste your endpoint URL or Mock ID
+3. Click **Load**
+4. Make changes to the JSON
+5. Click **Update Mock Endpoint**
+6. URL stays the same — clients auto-get new response
+
+### Using the Endpoint in Your App
+
+```js
+const response = await fetch('https://mockql.xxx.workers.dev/graphql/kv_abc123', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    query: `{ user { id name } }`,
+  }),
+});
+
+const data = await response.json();
+console.log(data); // → your mock response
+```
 
 ---
 
-## Endpoint behavior
+## ID Format
 
-| What the client sends | What the endpoint returns |
+MockQL automatically prefixes IDs with the backend type:
+
+- `kv_abc123xyz` = stored in Cloudflare KV
+- `pg_xyz789abc` = stored in Supabase Postgres
+
+When editing, the UI auto-detects the backend from the ID — no extra configuration needed.
+
+---
+
+## Endpoint Behavior
+
+| Request | Response |
 |---|---|
-| Any GraphQL POST (any query, any variables) | Always your mock JSON |
-| GET request | Also returns your mock JSON |
-| Wrong mock ID | `{ errors: [{ message: "Mock not found" }] }` |
-| Server misconfigured | `{ errors: [{ message: "Worker misconfigured" }] }` |
+| `POST /graphql/:id` (any query) | Always returns your mock JSON |
+| `GET /graphql/:id` | Same as POST |
+| Wrong ID | `{ errors: [{ message: "Mock not found" }] }` |
 
-CORS is open for all origins — call the endpoint from any browser or server app.
-
----
-
-## Security notes
-
-- No API key is entered in the browser — the site talks only to your Worker
-- The Cloudflare KV namespace binding (`MOCKQL_TESTER`) is stored in `wrangler.toml` and uses the namespace ID you created with Wrangler
-- `wrangler.toml` contains no secrets and is safe to commit
-- The `.wrangler/` folder is just local build cache — safe to commit or ignore
+CORS is open for all origins.
 
 ---
 
-## Updating a mock response
+## Troubleshooting
 
-Each generated endpoint is tied to a mock ID. To update:
-- Open the endpoint in the app and use the edit flow, or `PUT` the same `/mock/:id` URL
-- Or generate a new endpoint from the website (creates a new mock with a new URL)
+### "Postgres backend not configured"
+
+You haven't set up Supabase secrets. Run:
+```bash
+wrangler secret put SUPABASE_URL
+wrangler secret put SUPABASE_ANON_KEY
+wrangler deploy
+```
+
+### "KV namespace not found"
+
+Make sure `wrangler.toml` has the correct `id` under `[[kv_namespaces]]`.
+
+### Changes not showing up
+
+- For KV: changes are instant
+- For Postgres: wait a few seconds for the REST API to sync
+
+---
+
+## API Reference
+
+### POST /mock
+
+Create a new mock
+
+```bash
+curl -X POST "https://mockql.xxx.workers.dev/mock?backend=kv&label=my-endpoint" \
+  -H "Content-Type: application/json" \
+  -d '{"data":{"user":{"id":"1"}}}'
+
+# Response:
+# {
+#   "id": "kv_abc123",
+#   "backend": "kv",
+#   "label": "my-endpoint",
+#   "createdAt": "2024-..."
+# }
+```
+
+### GET /mock/:id
+
+Fetch an existing mock (for editing)
+
+```bash
+curl "https://mockql.xxx.workers.dev/mock/kv_abc123"
+
+# Response:
+# {
+#   "id": "kv_abc123",
+#   "data": {"user":{"id":"1"}},
+#   "metadata": {...}
+# }
+```
+
+### PUT /mock/:id
+
+Update an existing mock
+
+```bash
+curl -X PUT "https://mockql.xxx.workers.dev/mock/kv_abc123" \
+  -H "Content-Type: application/json" \
+  -d '{"data":{"user":{"id":"2"}}}'
+```
+
+### GET|POST /graphql/:id
+
+Serve mock as GraphQL endpoint (what your app calls)
+
+```bash
+curl -X POST "https://mockql.xxx.workers.dev/graphql/kv_abc123" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"{ user { id } }"}'
+
+# Response: your mock JSON
+# {"data":{"user":{"id":"1"}}}
+```
+
+---
+
+## Architecture
+
+```
+┌─────────────────┐
+│   Your App      │
+│  (Apollo, urql) │
+└────────┬────────┘
+         │
+         │ POST /graphql/:id
+         ↓
+┌──────────────────────────┐
+│  Cloudflare Worker       │
+│  (mockql.xxx.dev)        │
+│  ┌────────────────────┐  │
+│  │ GraphQL Router     │  │
+│  │ Detects: kv_ / pg_ │  │
+│  └─────┬────────┬─────┘  │
+│        ↓        ↓        │
+│   ┌───────┐  ┌─────────┐ │
+│   │  KV   │  │ Postgres│ │
+│   └───────┘  └─────────┘ │
+└──────────────────────────┘
+```
+
+---
+
+## Security
+
+- No sensitive keys in frontend code
+- Supabase secrets stored encrypted in Cloudflare
+- RLS policies on Postgres allow public read/write (mocks are meant to be public)
+- CORS open to all origins (by design — mocks are test data)
 
 ---
 
@@ -163,3 +345,9 @@ Each generated endpoint is tied to a mock ID. To update:
 
 **Tanvir Shaad**
 GitHub: [github.com/tanvirshaad](https://github.com/tanvirshaad)
+
+---
+
+## License
+
+MIT

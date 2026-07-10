@@ -1,8 +1,7 @@
 // ─── Config ───────────────────────────────────────────────────────────────────
-const DEFAULT_WORKER_BASE_URL = 'https://mockql.tanvirshaad.workers.dev/mock';
+const WORKER_BASE_URL = 'https://mockql.tanvirshaad.workers.dev';
 const WORKER_BASE_URL_KEY = 'mockql_worker_base_url';
 
-// ─── Example JSON ─────────────────────────────────────────────────────────────
 const EXAMPLE = {
     data: {
         users: [
@@ -26,21 +25,15 @@ const EXAMPLE = {
 };
 
 // ─── State ────────────────────────────────────────────────────────────────────
-let currentMode = 'create'; // 'create' | 'edit'
-let editingBinId = null; // set when a bin is loaded for editing
+let currentMode = 'create';
+let editingId = null;
+let editingBackend = null;
 
 // ─── DOM refs ─────────────────────────────────────────────────────────────────
 const editor = document.getElementById('jsonEditor');
 const validationBar = document.getElementById('validationBar');
 const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
-const workerUrlInput = document.getElementById('workerUrl');
-
-workerUrlInput.value =
-    localStorage.getItem(WORKER_BASE_URL_KEY) || DEFAULT_WORKER_BASE_URL;
-workerUrlInput.addEventListener('input', () => {
-    localStorage.setItem(WORKER_BASE_URL_KEY, workerUrlInput.value.trim());
-});
 
 // ─── Live validation (debounced) ──────────────────────────────────────────────
 let debounceTimer;
@@ -50,7 +43,6 @@ editor.addEventListener('input', () => {
     debounceTimer = setTimeout(validateJson, 400);
 });
 
-// Tab key → 2 spaces
 editor.addEventListener('keydown', (e) => {
     if (e.key === 'Tab') {
         e.preventDefault();
@@ -66,19 +58,19 @@ editor.addEventListener('keydown', (e) => {
 // ─── Mode switching ───────────────────────────────────────────────────────────
 function switchMode(mode) {
     currentMode = mode;
-    editingBinId = null;
+    editingId = null;
+    editingBackend = null;
 
     const isEdit = mode === 'edit';
 
     document.getElementById('tabCreate').classList.toggle('active', !isEdit);
     document.getElementById('tabEdit').classList.toggle('active', isEdit);
     document.getElementById('editRow').classList.toggle('show', isEdit);
-    document.getElementById('labelField').classList.toggle('hide', isEdit);
+    document.getElementById('storageChoice').classList.toggle('hide', isEdit);
     document.getElementById('generateBtn').textContent = isEdit
         ? 'Update Mock Endpoint'
         : 'Generate Mock Endpoint';
 
-    // Reset editor and result on mode switch
     clearEditor();
     document.getElementById('binIdInput').value = '';
 
@@ -87,10 +79,9 @@ function switchMode(mode) {
     }
 }
 
-// ─── Extract mock ID from URL or raw ID ──────────────────────────────────────
-function extractBinId(input) {
+// ─── Extract ID from URL or raw ID ───────────────────────────────────────────
+function extractId(input) {
     const trimmed = input.trim();
-    // If it looks like a URL, grab the last path segment
     if (trimmed.startsWith('http')) {
         const parts = trimmed.split('/').filter(Boolean);
         return parts[parts.length - 1];
@@ -98,15 +89,15 @@ function extractBinId(input) {
     return trimmed;
 }
 
-// ─── Load existing bin ────────────────────────────────────────────────────────
+// ─── Load existing mock ───────────────────────────────────────────────────────
 async function loadExistingBin() {
     const raw = document.getElementById('binIdInput').value.trim();
     if (!raw) {
-        alert('Please enter an endpoint URL or mock ID.');
+        alert('Please enter an endpoint URL or Mock ID.');
         return;
     }
 
-    const binId = extractBinId(raw);
+    const id = extractId(raw);
     const btn = document.getElementById('loadBtn');
     const btnTxt = document.getElementById('loadBtnText');
 
@@ -114,38 +105,30 @@ async function loadExistingBin() {
     btnTxt.innerHTML = '<span class="spinner dark"></span>';
 
     try {
-        const workerBaseUrl = getWorkerBaseUrl();
-        const res = await fetch(`${workerBaseUrl}/${binId}`);
+        const res = await fetch(`${WORKER_BASE_URL}/mock/${id}`);
 
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
-            throw new Error(err.message || `Worker error: ${res.status}`);
+            throw new Error(err.error || `Worker error: ${res.status}`);
         }
 
-        const record = await res.json();
+        const payload = await res.json();
 
-        // Load into editor
-        editor.value = JSON.stringify(record, null, 2);
-        editingBinId = binId;
+        editor.value = JSON.stringify(payload.data, null, 2);
+        editingId = id;
+        editingBackend = id.startsWith('pg_') ? 'postgres' : 'kv';
 
         validateJson();
 
-        // Show the endpoint URL in the result panel as a reference
-        const endpointUrl = `${workerBaseUrl}/${binId}`;
-        document.getElementById('endpointUrl').value = endpointUrl;
-        document.getElementById('resultMeta').textContent =
-            `mock: ${binId} · loaded for editing`;
-        document.getElementById('resultHeaderText').textContent =
-            'Endpoint loaded — edit and update below';
-        document.getElementById('usageSnippet').innerHTML =
-            buildSnippet(endpointUrl);
-        document.getElementById('step3').classList.add('active');
-
-        const panel = document.getElementById('resultPanel');
-        panel.classList.add('show');
-        panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        const endpointUrl = `${WORKER_BASE_URL}/graphql/${id}`;
+        showResult(
+            endpointUrl,
+            id,
+            payload.metadata?.label || 'loaded',
+            'loaded',
+        );
     } catch (err) {
-        alert(`Failed to load bin:\n\n${err.message}`);
+        alert(`Failed to load mock:\n\n${err.message}`);
     } finally {
         btn.disabled = false;
         btnTxt.textContent = 'Load';
@@ -262,20 +245,10 @@ function loadExample() {
     validateJson();
 }
 
-function getWorkerBaseUrl() {
-    const value = workerUrlInput.value.trim();
-    if (!value || value.includes('YOUR-SUBDOMAIN')) {
-        throw new Error(
-            'Set your Cloudflare Worker URL first. Paste the deployed /mock URL into the Worker URL field.',
-        );
-    }
-
-    return value.replace(/\/$/, '');
-}
-
 function clearEditor() {
     editor.value = '';
-    editingBinId = null;
+    editingId = null;
+    editingBackend = null;
     setStatus('idle', '○', 'Waiting for input...');
     document.getElementById('resultPanel').classList.remove('show');
 }
@@ -297,34 +270,36 @@ async function generateEndpoint() {
         return;
     }
 
+    const backend = document.querySelector(
+        'input[name="backend"]:checked',
+    ).value;
     const label =
         document.getElementById('endpointLabel').value.trim() ||
         'mock-endpoint';
     const btn = document.getElementById('generateBtn');
 
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span>Saving to Worker...';
+    btn.innerHTML = '<span class="spinner"></span>Saving...';
 
     try {
-        const workerBaseUrl = getWorkerBaseUrl();
-        const res = await fetch(workerBaseUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
+        const res = await fetch(
+            `${WORKER_BASE_URL}/mock?backend=${backend}&label=${encodeURIComponent(label)}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(parsed),
             },
-            body: JSON.stringify(parsed),
-        });
+        );
 
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
-            throw new Error(err.message || `Worker error: ${res.status}`);
+            throw new Error(err.error || `Worker error: ${res.status}`);
         }
 
         const data = await res.json();
-        const binId = data.id;
-        const endpointUrl = data.url || `${workerBaseUrl}/${binId}`;
+        const endpointUrl = `${WORKER_BASE_URL}/graphql/${data.id}`;
 
-        showResult(endpointUrl, binId, label, 'created');
+        showResult(endpointUrl, data.id, label, 'created');
     } catch (err) {
         alert(`Failed to create endpoint:\n\n${err.message}`);
     } finally {
@@ -341,7 +316,7 @@ async function updateEndpoint() {
         return;
     }
 
-    if (!editingBinId) {
+    if (!editingId) {
         alert(
             'No mock loaded. Use the "Load" button to fetch an existing endpoint first.',
         );
@@ -353,22 +328,19 @@ async function updateEndpoint() {
     btn.innerHTML = '<span class="spinner"></span>Updating...';
 
     try {
-        const workerBaseUrl = getWorkerBaseUrl();
-        const res = await fetch(`${workerBaseUrl}/${editingBinId}`, {
+        const res = await fetch(`${WORKER_BASE_URL}/mock/${editingId}`, {
             method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(parsed),
         });
 
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
-            throw new Error(err.message || `Worker error: ${res.status}`);
+            throw new Error(err.error || `Worker error: ${res.status}`);
         }
 
-        const endpointUrl = `${workerBaseUrl}/${editingBinId}`;
-        showResult(endpointUrl, editingBinId, 'updated', 'updated');
+        const endpointUrl = `${WORKER_BASE_URL}/graphql/${editingId}`;
+        showResult(endpointUrl, editingId, 'updated', 'updated');
     } catch (err) {
         alert(`Failed to update endpoint:\n\n${err.message}`);
     } finally {
@@ -378,16 +350,17 @@ async function updateEndpoint() {
 }
 
 // ─── Display result ───────────────────────────────────────────────────────────
-function showResult(url, binId, label, action) {
+function showResult(url, id, label, action) {
     document.getElementById('step3').classList.add('active');
     document.getElementById('endpointUrl').value = url;
-    document.getElementById('resultMeta').textContent =
-        `mock: ${binId} · ${label}`;
+    document.getElementById('resultMeta').textContent = `${label}`;
     document.getElementById('usageSnippet').innerHTML = buildSnippet(url);
     document.getElementById('resultHeaderText').textContent =
         action === 'updated'
             ? 'Endpoint updated successfully'
-            : 'Endpoint created successfully';
+            : action === 'loaded'
+              ? 'Endpoint loaded — edit and update below'
+              : 'Endpoint created successfully';
 
     const panel = document.getElementById('resultPanel');
     panel.classList.add('show');
