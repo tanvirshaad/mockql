@@ -108,7 +108,7 @@ export default {
                 data = payload.data;
             }
 
-            return json(data);
+            return json(data, 200, id.startsWith('pg_'));
         }
 
         return json({ error: 'Not found' }, 404);
@@ -222,15 +222,19 @@ async function loadFromDB(id, env) {
         }
 
         const row = rows[0];
-        return json({
-            id,
-            data: row.data,
-            metadata: {
-                label: row.label,
-                createdAt: row.created_at,
-                updatedAt: row.updated_at,
+        return json(
+            {
+                id,
+                data: row.data,
+                metadata: {
+                    label: row.label,
+                    createdAt: row.created_at,
+                    updatedAt: row.updated_at,
+                },
             },
-        });
+            200,
+            true,
+        );
     } catch (err) {
         return json({ error: `Postgres error: ${err.message}` }, 502);
     }
@@ -283,9 +287,20 @@ function generateId() {
         .slice(0, 12);
 }
 
-function json(data, status = 200) {
+function json(data, status = 200, noCache = false) {
     return new Response(JSON.stringify(data), {
         status,
-        headers: { 'Content-Type': 'application/json', ...CORS },
+        headers: {
+            'Content-Type': 'application/json',
+            ...(noCache
+                ? {
+                      'Cache-Control':
+                          'no-store, no-cache, must-revalidate, max-age=0',
+                      Pragma: 'no-cache',
+                      'Surrogate-Control': 'no-store',
+                  }
+                : {}),
+            ...CORS,
+        },
     });
 }
