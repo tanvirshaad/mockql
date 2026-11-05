@@ -1,6 +1,10 @@
 // ─── Config ───────────────────────────────────────────────────────────────────
 const WORKER_BASE_URL = 'https://mockql.tanvirshaad.workers.dev';
 const WORKER_BASE_URL_KEY = 'mockql_worker_base_url';
+const MIGRATION_BANNER_DISMISSED_KEY = 'mockql_migration_banner_acknowledged';
+const MIGRATION_BANNER_EXPIRES_AT = '2026-11-10T23:59:59+06:00';
+const MIGRATION_BANNER_DEADLINE_LABEL =
+    'November 10, 2026 at 11:59 PM (GMT+6)';
 
 const EXAMPLE = {
     data: {
@@ -28,12 +32,97 @@ const EXAMPLE = {
 let currentMode = 'create';
 let editingId = null;
 let editingBackend = null;
+let migrationModalClosed = false;
 
 // ─── DOM refs ─────────────────────────────────────────────────────────────────
 const editor = document.getElementById('jsonEditor');
 const validationBar = document.getElementById('validationBar');
 const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
+
+// ─── Migration notice ────────────────────────────────────────────────────────
+function updateMigrationCountdown() {
+    const daysRemaining = document.getElementById('migrationDaysRemaining');
+    const deadline = document.getElementById('migrationDeadline');
+    if (!daysRemaining || !deadline) return;
+
+    deadline.textContent = MIGRATION_BANNER_DEADLINE_LABEL;
+
+    const millisecondsRemaining =
+        Date.parse(MIGRATION_BANNER_EXPIRES_AT) - Date.now();
+    const remainingDays = Math.max(
+        1,
+        Math.ceil(millisecondsRemaining / (24 * 60 * 60 * 1000)),
+    );
+
+    daysRemaining.textContent = `${remainingDays} ${
+        remainingDays === 1 ? 'day' : 'days'
+    }`;
+}
+
+function moveMigrationBannerIntoContent() {
+    const banner = document.getElementById('migrationBanner');
+    const hero = document.querySelector('.hero');
+    if (!banner || !hero) return;
+
+    hero.insertAdjacentElement('afterend', banner);
+}
+
+function dismissMigrationBanner() {
+    const banner = document.getElementById('migrationBanner');
+    if (!banner) return;
+
+    migrationModalClosed = true;
+    document.body.classList.remove('migration-modal-open');
+    banner.classList.add('is-dismissed');
+    moveMigrationBannerIntoContent();
+}
+
+function acknowledgeMigrationBanner() {
+    const banner = document.getElementById('migrationBanner');
+    if (!banner) return;
+
+    migrationModalClosed = true;
+    document.body.classList.remove('migration-modal-open');
+    banner.classList.add('is-dismissed');
+    moveMigrationBannerIntoContent();
+    localStorage.setItem(MIGRATION_BANNER_DISMISSED_KEY, 'true');
+}
+
+function showMigrationBanner() {
+    const banner = document.getElementById('migrationBanner');
+    if (!banner) {
+        document.body.classList.remove('migration-modal-open');
+        return;
+    }
+
+    updateMigrationCountdown();
+    const isExpired = Date.now() >= Date.parse(MIGRATION_BANNER_EXPIRES_AT);
+    const wasDismissed =
+        localStorage.getItem(MIGRATION_BANNER_DISMISSED_KEY) === 'true';
+
+    if (isExpired) {
+        document.body.classList.remove('migration-modal-open');
+        banner.remove();
+        return;
+    }
+
+    if (migrationModalClosed) {
+        document.body.classList.remove('migration-modal-open');
+        return;
+    }
+
+    if (wasDismissed) {
+        banner.classList.add('is-dismissed');
+        moveMigrationBannerIntoContent();
+        return;
+    }
+
+    document.body.classList.add('migration-modal-open');
+}
+
+showMigrationBanner();
+setInterval(showMigrationBanner, 60 * 1000);
 
 // ─── Live validation (debounced) ──────────────────────────────────────────────
 let debounceTimer;

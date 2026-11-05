@@ -11,6 +11,34 @@
         <link rel="stylesheet" href="style.css" />
     </head>
     <body>
+        <aside class="migration-banner" id="migrationBanner" role="status">
+            <div class="migration-icon" aria-hidden="true">!</div>
+            <div class="migration-content">
+                <strong>Action required: Cloudflare KV is being retired due to limit issues.</strong>
+                <span>
+                    Move your saved mocks to Supabase Postgres within the next
+                    <strong id="migrationDaysRemaining">5 days</strong> to prevent data loss.
+                    Migration deadline:
+                    <strong id="migrationDeadline">November 10, 2026 at 11:59 PM (GMT+6)</strong>.
+                </span>
+                <label class="migration-confirm">
+                    <input
+                        type="checkbox"
+                        onchange="acknowledgeMigrationBanner()"
+                    />
+                    <span>I understand. Don't show me again.</span>
+                </label>
+            </div>
+            <button
+                class="migration-dismiss"
+                type="button"
+                aria-label="Dismiss migration notice"
+                onclick="dismissMigrationBanner()"
+            >
+                &times;
+            </button>
+        </aside>
+
         <div class="wrap">
             <header>
                 <div class="logo">
